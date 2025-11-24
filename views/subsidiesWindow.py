@@ -5,7 +5,7 @@ import os
 
 from PyQt5 import QtWidgets
 from PyQt5.QtCore import pyqtSignal, Qt
-from PyQt5.QtGui import QFont, QCursor
+from PyQt5.QtGui import QFont, QCursor, QColor
 
 from config.roles import Permisos, Roles
 from config.settings import Settings
@@ -40,22 +40,21 @@ class SubsidiosWindow(QtWidgets.QWidget):
         self.setMinimumSize(Settings.WINDOW_MIN_WIDTH, Settings.WINDOW_MIN_HEIGHT)
 
         main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.setContentsMargins(18, 12, 18, 12)
+        main_layout.setSpacing(12)
 
-        # Header con botón volver
+        # Header con botón volver y título
         header_layout = QtWidgets.QHBoxLayout()
         back_button = QtWidgets.QPushButton("←")
-        back_button.setFont(QFont("Arial", 12))
+        back_button.setFont(QFont("Segoe UI", 12))
         back_button.setCursor(QCursor(Qt.PointingHandCursor))
         back_button.clicked.connect(lambda: self.back_requested.emit())
-        back_button.setStyleSheet("""
-            QPushButton { background-color: transparent; border: none; color: #3498db; padding: 4px 8px; font-size: 16px; }
-            QPushButton:hover { color: #2980b9; }
-        """)
+        back_button.setStyleSheet("background: transparent; border: none; color: #3498db; padding: 6px 8px; font-size: 16px;")
         header_layout.addWidget(back_button)
 
         title = QtWidgets.QLabel("Gestión de Subsidios y Beneficios")
-        title.setFont(QFont("Arial", 16, QFont.Bold))
-        title.setStyleSheet("color: #2c3e50;")
+        title.setFont(QFont("Segoe UI", 16, QFont.Bold))
+        title.setStyleSheet("color: #2c3e50; margin-left: 6px;")
         header_layout.addWidget(title)
         header_layout.addStretch()
 
@@ -64,7 +63,11 @@ class SubsidiosWindow(QtWidgets.QWidget):
         # Toolbar
         self._add_toolbar(main_layout)
 
-        # Tabla
+        # Content area (table + form)
+        content_layout = QtWidgets.QHBoxLayout()
+        content_layout.setSpacing(16)
+
+        # Left: table (list of subsidios)
         self.table = QtWidgets.QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["ID", "Nombre", "Valor (%)", "ID Normativa"])
         self.table.horizontalHeader().setStretchLastSection(True)
@@ -72,31 +75,75 @@ class SubsidiosWindow(QtWidgets.QWidget):
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.table.hideColumn(0)
         self.table.itemSelectionChanged.connect(self._on_table_select)
-        main_layout.addWidget(self.table)
+        self.table.setAlternatingRowColors(True)
+        self.table.setStyleSheet("""
+            QTableWidget { background: white; border: 1px solid #e6e9ee; }
+            QHeaderView::section { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #E94E1B, stop:1 #ff7a43); color: white; padding: 8px; font-weight: bold; }
+        """)
+        content_layout.addWidget(self.table, 2)
 
-        # Formulario
-        form = QtWidgets.QFormLayout()
+        # Right: form
+        form_frame = QtWidgets.QFrame()
+        form_frame.setStyleSheet("QFrame { background: white; border: 1px solid #e6e9ee; border-radius: 8px; }")
+        form_layout = QtWidgets.QFormLayout()
+        form_layout.setContentsMargins(12, 12, 12, 12)
+        form_layout.setSpacing(10)
+
         self.input_nombre = QtWidgets.QLineEdit()
+        self.input_nombre.setPlaceholderText("Nombre del subsidio")
         self.input_valor = QtWidgets.QLineEdit()
+        self.input_valor.setPlaceholderText("Ej: 12.5 o 12,5")
         self.input_idnorm = QtWidgets.QLineEdit()
-        form.addRow("Nombre subsidio:", self.input_nombre)
-        form.addRow("Valor (% o decimal):", self.input_valor)
-        form.addRow("ID Normativa (opcional):", self.input_idnorm)
-        main_layout.addLayout(form)
+        self.input_idnorm.setPlaceholderText("ID normativa (opcional)")
 
-        if not self._can_edit:
-            self.input_nombre.setReadOnly(True)
-            self.input_valor.setReadOnly(True)
-            self.input_idnorm.setReadOnly(True)
+        form_layout.addRow("Nombre subsidio:", self.input_nombre)
+        form_layout.addRow("Valor (% o decimal):", self.input_valor)
+        form_layout.addRow("ID Normativa:", self.input_idnorm)
 
-        # Botonera inferior
+        form_frame.setLayout(form_layout)
+        content_layout.addWidget(form_frame, 1)
+
+        main_layout.addLayout(content_layout)
+
+        # Bottom buttons
         btn_layout = QtWidgets.QHBoxLayout()
+        btn_layout.setSpacing(10)
+
         self.btn_back = QtWidgets.QPushButton("Volver")
+        self.btn_back.clicked.connect(lambda: self.back_requested.emit())
+        self.btn_back.setCursor(QCursor(Qt.PointingHandCursor))
         self.btn_new = QtWidgets.QPushButton("Nuevo")
         self.btn_save = QtWidgets.QPushButton("Guardar")
         self.btn_delete = QtWidgets.QPushButton("Eliminar")
         self.btn_import = QtWidgets.QPushButton("Importar CSV")
         self.btn_export = QtWidgets.QPushButton("Exportar CSV")
+
+        # Connect actions
+        self.btn_new.clicked.connect(self._on_new)
+        self.btn_save.clicked.connect(self._on_save)
+        self.btn_delete.clicked.connect(self._on_delete)
+        self.btn_import.clicked.connect(self._on_import)
+        self.btn_export.clicked.connect(self._on_export)
+
+        # Roles/permissions
+        if not self._can_edit:
+            self.input_nombre.setReadOnly(True)
+            self.input_valor.setReadOnly(True)
+            self.input_idnorm.setReadOnly(True)
+            self.btn_new.setVisible(False)
+            self.btn_save.setVisible(False)
+            self.btn_delete.setVisible(False)
+            self.btn_import.setVisible(False)
+            self.btn_export.setToolTip("Exportar datos (solo lectura)")
+
+        # Set properties for styled roles (used by stylesheet)
+        self.btn_new.setProperty("role", "primary")
+        self.btn_save.setProperty("role", "secondary")
+        self.btn_delete.setProperty("role", "danger")
+        self.btn_import.setProperty("role", "muted")
+        self.btn_export.setProperty("role", "muted")
+        self.btn_back.setProperty("role", "muted")
+
         btn_layout.addWidget(self.btn_back)
         btn_layout.addWidget(self.btn_new)
         btn_layout.addWidget(self.btn_save)
@@ -104,71 +151,47 @@ class SubsidiosWindow(QtWidgets.QWidget):
         btn_layout.addStretch()
         btn_layout.addWidget(self.btn_import)
         btn_layout.addWidget(self.btn_export)
+
         main_layout.addLayout(btn_layout)
 
-        self.btn_back.clicked.connect(lambda: self.back_requested.emit())
-        self.btn_new.clicked.connect(self._on_new)
-        self.btn_save.clicked.connect(self._on_save)
-        self.btn_delete.clicked.connect(self._on_delete)
-        self.btn_import.clicked.connect(self._on_import)
-        self.btn_export.clicked.connect(self._on_export)
+        # Tooltips
+        self.btn_import.setToolTip("Importar subsidios desde CSV (actualiza o inserta filas)")
+        self.btn_export.setToolTip("Exportar subsidios a CSV")
 
-        if not self._can_edit:
-            self.btn_new.setVisible(False)
-            self.btn_save.setVisible(False)
-            self.btn_delete.setVisible(False)
-            self.btn_import.setVisible(False)
-            self.btn_export.setToolTip("Exportar datos (solo lectura)")
-        else:
-            self.btn_import.setToolTip("Importar subsidios desde CSV (actualiza o inserta filas)")
-            self.btn_new.setToolTip("Crear nuevo subsidio")
-            self.btn_save.setToolTip("Guardar subsidio")
-            self.btn_delete.setToolTip("Eliminar subsidio seleccionado")
-
-        self.setLayout(main_layout)
+        # Apply styles
+        self.apply_styles()
 
     def _add_toolbar(self, layout):
         toolbar_layout = QtWidgets.QHBoxLayout()
         toolbar_layout.setSpacing(10)
 
         btn_nueva = QtWidgets.QPushButton("➕ Nuevo Subsidio")
-        btn_nueva.setFont(QFont("Arial", 10, QFont.Bold))
-        btn_nueva.setMinimumHeight(40)
         btn_nueva.setCursor(QCursor(Qt.PointingHandCursor))
         btn_nueva.clicked.connect(self._on_new)
-        btn_nueva.setStyleSheet("""
-            QPushButton { background-color: #E94E1B; color: white; border: none; border-radius: 5px; padding: 10px 20px; }
-            QPushButton:hover { background-color: #d64419; }
-        """)
-        btn_nueva.setVisible(self._can_edit)
-        toolbar_layout.addWidget(btn_nueva)
+        btn_nueva.setProperty("role", "primary")
+        btn_nueva.setStyleSheet("padding:8px 14px; border-radius:6px;")
 
         btn_refrescar = QtWidgets.QPushButton("🔄 Refrescar")
-        btn_refrescar.setFont(QFont("Arial", 10))
-        btn_refrescar.setMinimumHeight(40)
         btn_refrescar.setCursor(QCursor(Qt.PointingHandCursor))
         btn_refrescar.clicked.connect(self._load_data)
-        btn_refrescar.setStyleSheet("""
-            QPushButton { background-color: #3498db; color: white; border: none; border-radius: 5px; padding: 10px 20px; }
-            QPushButton:hover { background-color: #2980b9; }
-        """)
-        toolbar_layout.addWidget(btn_refrescar)
+        btn_refrescar.setProperty("role", "secondary")
+        btn_refrescar.setStyleSheet("padding:8px 12px; border-radius:6px;")
 
         btn_limpiar = QtWidgets.QPushButton("🗑️ Limpiar Todo")
-        btn_limpiar.setFont(QFont("Arial", 10))
-        btn_limpiar.setMinimumHeight(40)
         btn_limpiar.setCursor(QCursor(Qt.PointingHandCursor))
         btn_limpiar.clicked.connect(self._limpiar_todos_subsidios)
-        btn_limpiar.setStyleSheet("""
-            QPushButton { background-color: #e74c3c; color: white; border: none; border-radius: 5px; padding: 10px 20px; }
-            QPushButton:hover { background-color: #c0392b; }
-        """)
+        btn_limpiar.setProperty("role", "danger")
         btn_limpiar.setVisible(self._is_admin)
-        toolbar_layout.addWidget(btn_limpiar)
+        btn_limpiar.setStyleSheet("padding:8px 12px; border-radius:6px;")
 
+        toolbar_layout.addWidget(btn_nueva)
+        toolbar_layout.addWidget(btn_refrescar)
+        toolbar_layout.addWidget(btn_limpiar)
         toolbar_layout.addStretch()
+
+        # single info label (no duplication)
         self.label_info = QtWidgets.QLabel("")
-        self.label_info.setFont(QFont("Arial", 10, QFont.Bold))
+        self.label_info.setFont(QFont("Segoe UI", 10))
         self.label_info.setStyleSheet("color: #2c3e50;")
         toolbar_layout.addWidget(self.label_info)
 
@@ -182,7 +205,9 @@ class SubsidiosWindow(QtWidgets.QWidget):
             subsidios = self.service.list_all()
             for s in subsidios:
                 self._add_row(s)
-            self.label_info.setText(f"Total: {len(subsidios)} subsidios")
+            total = len(subsidios)
+            # update single label only
+            self.label_info.setText(f"Total: {total} subsidios")
         except Exception as e:
             app_logger.error(f"Error cargando subsidios: {e}")
             QtWidgets.QMessageBox.warning(self, "Error", "No fue posible cargar los subsidios. Consulte logs.")
