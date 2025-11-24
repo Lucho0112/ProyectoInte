@@ -228,10 +228,10 @@ class UserFormDialog(QDialog):
             if self.modo == "crear":
                 user_data["password"] = self.input_password.text()
                 
-                # Registrar usuario
-                result = self.service.register_user(user_data)
+                # Llamar al método existente en AuthService (se llama 'register', no 'register_user')
+                result = self.service.register(user_data)
                 
-                if result["success"]:
+                if result.get("success"):
                     # Registrar auditoría
                     log_audit(
                         action="USUARIO_CREADO",
@@ -246,15 +246,37 @@ class UserFormDialog(QDialog):
                     )
                     self.accept()
                 else:
-                    QMessageBox.warning(self, "Error", result["message"])
+                    QMessageBox.warning(self, "Error", result.get("message", "Error desconocido"))
             
             else:
-                # Actualizar usuario (implementar si es necesario)
-                QMessageBox.information(
-                    self,
-                    "Información",
-                    "La edición de usuarios se implementará próximamente"
-                )
+                # EDITAR: usar AuthService.update_user
+                try:
+                    user_id = self.usuario.get("_id")
+                    updates = {
+                        "nombre": user_data["nombre"],
+                        "apellido_P": user_data["apellido_P"],
+                        "apellido_M": user_data["apellido_M"],
+                        "correo": user_data["correo"],
+                        "rol": user_data["rol"]
+                    }
+                    # Si desea permitirse cambiar contraseña en edición, añadir aquí:
+                    # if hasattr(self, 'input_password') and self.input_password.text():
+                    #     updates['contraseña'] = self.input_password.text()
+                    
+                    result = self.service.update_user(user_id, updates)
+                    if result.get("success"):
+                        log_audit(
+                            action="USUARIO_EDITADO",
+                            user_id=self.user_data.get("_id"),
+                            details={"usuario_id": user_id, "fields": list(updates.keys())}
+                        )
+                        QMessageBox.information(self, "Éxito", "Usuario actualizado correctamente")
+                        self.accept()
+                    else:
+                        QMessageBox.warning(self, "Error", result.get("message", "Error al actualizar usuario"))
+                except Exception as e:
+                    app_logger.error(f"Error actualizando usuario en UI: {e}")
+                    QMessageBox.critical(self, "Error", f"Error al actualizar usuario: {str(e)}")
         
         except Exception as e:
             app_logger.error(f"Error al guardar usuario: {str(e)}")
@@ -314,7 +336,7 @@ class UserFormDialog(QDialog):
                 background-color: #7f8c8d;
             }
         """)
-
+        
 
 class GestionUsuariosContent(QWidget):
     """Contenido de gestión de usuarios"""
@@ -476,7 +498,7 @@ class GestionUsuariosContent(QWidget):
         self.table.setColumnCount(8)
         self.table.setHorizontalHeaderLabels([
             "RUT", "Nombre Completo", "Correo", "Rol",
-            "Fecha Registro", "Último Acceso", "Editar", "Desactivar"
+            "Fecha Registro", "Último Acceso", "Editar", "Activo"
         ])
         
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -561,11 +583,28 @@ class GestionUsuariosContent(QWidget):
             btn_editar.clicked.connect(lambda checked, u=usuario: self.abrir_formulario_editar(u))
             self.table.setCellWidget(row, 6, btn_editar)
             
-            # Botón desactivar
-            btn_desactivar = QPushButton("🚫")
-            btn_desactivar.setCursor(QCursor(Qt.PointingHandCursor))
-            btn_desactivar.clicked.connect(lambda checked, u=usuario: self.desactivar_usuario(u))
-            self.table.setCellWidget(row, 7, btn_desactivar)
+            # Activo / Inactivo - mostrar control de toggle
+            is_active = usuario.get("activo", True)
+            if is_active:
+                btn_toggle = QPushButton("🚫")  # desactivar
+                btn_toggle.setToolTip("Desactivar usuario")
+            else:
+                btn_toggle = QPushButton("♻️")  # reactivar
+                btn_toggle.setToolTip("Reactivar usuario")
+            
+            btn_toggle.setCursor(QCursor(Qt.PointingHandCursor))
+            btn_toggle.clicked.connect(lambda checked, u=usuario: self.toggle_usuario_activo(u))
+            self.table.setCellWidget(row, 7, btn_toggle)
+            
+            # Visualmente marcar filas inactivas
+            if not is_active:
+                for c in range(self.table.columnCount()):
+                    item = self.table.item(row, c)
+                    if item:
+                        item.setForeground(QColor(140, 140, 140))
+                        font = item.font()
+                        font.setItalic(True)
+                        item.setFont(font)
         
         self.label_contador.setText(f"Total: {len(usuarios)} usuarios")
     
@@ -581,21 +620,49 @@ class GestionUsuariosContent(QWidget):
         if dialog.exec_():
             self.refrescar_tabla()
     
-    def desactivar_usuario(self, usuario: dict):
-        """Desactiva un usuario"""
-        reply = QMessageBox.question(
-            self,
-            "Confirmar",
-            f"¿Está seguro de desactivar al usuario {usuario.get('nombre', '')}?",
-            QMessageBox.Yes | QMessageBox.No
-        )
+    def toggle_usuario_activo(self, usuario: dict):
+        """Alterna el estado activo/inactivo de un usuario (desactivar/reactivar)."""
+        if not usuario:
+            return
+        user_id = usuario.get("_id")
+        if not user_id:
+            QMessageBox.warning(self, "Error", "No se pudo identificar el usuario seleccionado.")
+            return
         
-        if reply == QMessageBox.Yes:
-            QMessageBox.information(
-                self,
-                "Información",
-                "La desactivación de usuarios se implementará próximamente"
-            )
+        is_active = usuario.get("activo", True)
+        # Preparar dialog de confirmación con estilo claro (evitar cuadros negros)
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Question)
+        msg.setWindowTitle("Confirmar")
+        if is_active:
+            msg.setText(f"¿Está seguro de desactivar al usuario {usuario.get('nombre', '')}?")
+        else:
+            msg.setText(f"¿Desea reactivar al usuario {usuario.get('nombre', '')}?")
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg.setStyleSheet("QMessageBox { background-color: white; } QLabel { color: #222; }")
+        resp = msg.exec_()
+        if resp != QMessageBox.Yes:
+            return
+        
+        try:
+            if is_active:
+                result = self.service.deactivate_user(user_id)
+                action = "USUARIO_DESACTIVADO"
+                success_msg = "Usuario desactivado correctamente"
+            else:
+                result = self.service.reactivate_user(user_id)
+                action = "USUARIO_REACTIVADO"
+                success_msg = "Usuario reactivado correctamente"
+            
+            if result.get("success"):
+                log_audit(action, self.user_data.get("_id"), {"usuario_id": user_id})
+                QMessageBox.information(self, "Éxito", success_msg)
+                self.refrescar_tabla()
+            else:
+                QMessageBox.warning(self, "Error", result.get("message", "Error en la operación"))
+        except Exception as e:
+            app_logger.error(f"Error cambiando estado usuario: {e}")
+            QMessageBox.critical(self, "Error", "Ocurrió un error al cambiar el estado del usuario. Consulte logs.")
     
     def aplicar_filtros(self):
         """Aplica filtros a la lista de usuarios"""
@@ -628,6 +695,7 @@ class GestionUsuariosContent(QWidget):
                 data["_id"] = doc.id
                 usuarios.append(data)
             
+            # Mostrar todos (activos e inactivos) para permitir reactivación
             self.actualizar_tabla(usuarios)
         
         except Exception as e:
