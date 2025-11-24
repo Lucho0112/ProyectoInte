@@ -10,6 +10,7 @@ from PyQt5.QtGui import QFont, QColor, QCursor
 from datetime import datetime
 from services.reportService import ReportService
 from utils.logger import app_logger
+import traceback
 
 
 class ExportWorker(QThread):
@@ -30,6 +31,7 @@ class ExportWorker(QThread):
             result = self.method(*self.args, **self.kwargs, progress_callback=self.emit_progress)
             self.finished.emit(result)
         except Exception as e:
+            app_logger.error(f"Error en worker de exportación: {str(e)}\n{traceback.format_exc()}")
             self.finished.emit({"success": False, "message": str(e)})
     
     def emit_progress(self, value):
@@ -431,7 +433,11 @@ class GenerarReportesContent(QWidget):
     def aplicar_filtros(self):
         """Aplica los filtros y carga datos"""
         try:
+            # ✅ CORRECCIÓN: Obtener filtros con validación
             filtros = self.obtener_filtros()
+            
+            # Log para debug
+            app_logger.info(f"Filtros obtenidos: {filtros}")
             
             # Limpiar caché del servicio
             self.service.limpiar_cache()
@@ -506,7 +512,7 @@ class GenerarReportesContent(QWidget):
                 self.label_contador.setText(f"Total: {total} registros")
         
         except Exception as e:
-            app_logger.error(f"Error al aplicar filtros: {e}")
+            app_logger.error(f"Error al aplicar filtros: {str(e)}\n{traceback.format_exc()}")
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Critical)
             msg.setWindowTitle("Error")
@@ -522,81 +528,138 @@ class GenerarReportesContent(QWidget):
             msg.exec_()
     
     def obtener_filtros(self) -> dict:
-        """Obtiene los filtros actuales"""
-        filtros = {
-            "fecha_desde": self.date_desde.date().toPyDate(),
-            "fecha_hasta": self.date_hasta.date().toPyDate()
-        }
-        
-        if self.combo_tipo.currentText() != "Todos":
-            filtros["tipo_impuesto"] = self.combo_tipo.currentText()
-        
-        if self.combo_pais.currentText() != "Todos":
-            filtros["pais"] = self.combo_pais.currentText()
-        
-        # RUT Cliente
-        rut_filtro = self.input_rut_filtro.text().strip()
-        if rut_filtro:
-            filtros["rut_cliente"] = rut_filtro
-        
-        # Estado
-        if self.radio_local.isChecked():
-            filtros["estado"] = "local"
-        elif self.radio_bolsa.isChecked():
-            filtros["estado"] = "bolsa"
-        else:
-            filtros["estado"] = "ambos"
-        
-        return filtros
+        """Obtiene los filtros actuales - SOLO valores simples (str, int, float, date)"""
+        try:
+            filtros = {}
+            
+            # ✅ Fechas - convertir a date de Python
+            filtros["fecha_desde"] = self.date_desde.date().toPyDate()
+            filtros["fecha_hasta"] = self.date_hasta.date().toPyDate()
+            
+            # ✅ Tipo de impuesto - solo string
+            tipo_texto = self.combo_tipo.currentText()
+            if tipo_texto != "Todos":
+                filtros["tipo_impuesto"] = str(tipo_texto)
+            
+            # ✅ País - solo string
+            pais_texto = self.combo_pais.currentText()
+            if pais_texto != "Todos":
+                filtros["pais"] = str(pais_texto)
+            
+            # ✅ RUT Cliente - solo string
+            rut_filtro = self.input_rut_filtro.text().strip()
+            if rut_filtro:
+                filtros["rut_cliente"] = str(rut_filtro)
+            
+            # ✅ Estado - solo string
+            if self.radio_local.isChecked():
+                filtros["estado"] = "local"
+            elif self.radio_bolsa.isChecked():
+                filtros["estado"] = "bolsa"
+            else:
+                filtros["estado"] = "ambos"
+            
+            return filtros
+            
+        except Exception as e:
+            app_logger.error(f"Error al obtener filtros: {str(e)}\n{traceback.format_exc()}")
+            # Retornar filtros mínimos en caso de error
+            return {
+                "fecha_desde": datetime.now().date(),
+                "fecha_hasta": datetime.now().date(),
+                "estado": "ambos"
+            }
     
     def actualizar_vista_previa(self, datos: list):
-        """Actualiza la tabla de vista previa"""
-        self.preview_table.setRowCount(len(datos))
         
-        for row, cal in enumerate(datos):
-            # RUT Cliente
-            rut = self.service.obtener_rut_cliente(cal.get("clienteId", ""))
-            self.preview_table.setItem(row, 0, QTableWidgetItem(rut))
+        """Actualiza la tabla de vista previa"""
+        try:
+            self.preview_table.setRowCount(len(datos))
             
-            # Fecha
-            self.preview_table.setItem(row, 1, QTableWidgetItem(cal.get("fechaDeclaracion", "")))
-            
-            # Tipo
-            self.preview_table.setItem(row, 2, QTableWidgetItem(cal.get("tipoImpuesto", "")))
-            
-            # País
-            self.preview_table.setItem(row, 3, QTableWidgetItem(cal.get("pais", "")))
-            
-            # Monto
-            monto = cal.get("montoDeclarado", 0)
-            item_monto = QTableWidgetItem(f"${monto:,.2f}")
-            item_monto.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.preview_table.setItem(row, 4, item_monto)
-            
-            # Suma 8-19
-            factores = cal.get("factores", {})
-            suma = sum(factores.get(f"factor_{i}", 0) for i in range(8, 20))
-            item_suma = QTableWidgetItem(f"{suma:.4f}")
-            item_suma.setTextAlignment(Qt.AlignCenter)
-            
-            if suma > 1.0:
-                item_suma.setBackground(QColor(255, 200, 200))
-                item_suma.setForeground(QColor(200, 0, 0))
-            else:
-                item_suma.setBackground(QColor(200, 255, 200))
-                item_suma.setForeground(QColor(0, 150, 0))
-            
-            self.preview_table.setItem(row, 5, item_suma)
-            
-            # Estado
-            estado = "Local" if cal.get("esLocal", False) else "Bolsa"
-            item_estado = QTableWidgetItem(estado)
-            item_estado.setTextAlignment(Qt.AlignCenter)
-            self.preview_table.setItem(row, 6, item_estado)
-            
-            # Válido
-            valido = "✅ Sí" if suma <= 1.0 else "❌ No"
-            self.preview_table.setItem(row, 7, QTableWidgetItem(valido))
+            for row, cal in enumerate(datos):
+                try:
+                    # RUT Cliente
+                    rut = self.service.obtener_rut_cliente(cal.get("clienteId", ""))
+                    self.preview_table.setItem(row, 0, QTableWidgetItem(str(rut)))
+                    
+                    # Fecha
+                    self.preview_table.setItem(row, 1, QTableWidgetItem(str(cal.get("fechaDeclaracion", ""))))
+                    
+                    # Tipo
+                    self.preview_table.setItem(row, 2, QTableWidgetItem(str(cal.get("tipoImpuesto", ""))))
+                    
+                    # País
+                    self.preview_table.setItem(row, 3, QTableWidgetItem(str(cal.get("pais", ""))))
+                    
+                    # Monto
+                    monto = cal.get("montoDeclarado", 0)
+                    try:
+                        monto_float = float(monto)
+                        item_monto = QTableWidgetItem(f"${monto_float:,.2f}")
+                    except (ValueError, TypeError):
+                        item_monto = QTableWidgetItem("$0.00")
+                    item_monto.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    self.preview_table.setItem(row, 4, item_monto)
+                    
+                    # ✅ CORRECCIÓN CRÍTICA: Suma 8-19 con manejo robusto de factores
+                    factores = cal.get("factores", {})
+                    suma = 0.0
+                    
+                    # Verificar si factores es un diccionario
+                    if isinstance(factores, dict):
+                        try:
+                            suma = sum(float(factores.get(f"factor_{i}", 0)) for i in range(8, 20))
+                        except (ValueError, TypeError) as e:
+                            app_logger.warning(f"Error al sumar factores (dict) en fila {row}: {e}")
+                            suma = 0.0
+                    # Si factores es una lista (problema común)
+                    elif isinstance(factores, (list, tuple)):
+                        try:
+                            # Si es lista de 19 elementos, sumar índices 7-18 (factores 8-19)
+                            if len(factores) >= 19:
+                                suma = sum(float(factores[i]) for i in range(7, 19))
+                            else:
+                                app_logger.warning(f"Lista de factores incompleta en fila {row}: {len(factores)} elementos")
+                                suma = 0.0
+                        except (ValueError, TypeError, IndexError) as e:
+                            app_logger.warning(f"Error al sumar factores (list) en fila {row}: {e}")
+                            suma = 0.0
+                    else:
+                        app_logger.warning(f"Tipo de factores no soportado en fila {row}: {type(factores)}")
+                        suma = 0.0
+                    
+                    item_suma = QTableWidgetItem(f"{suma:.4f}")
+                    item_suma.setTextAlignment(Qt.AlignCenter)
+                    
+                    if suma > 1.0:
+                        item_suma.setBackground(QColor(255, 200, 200))
+                        item_suma.setForeground(QColor(200, 0, 0))
+                    else:
+                        item_suma.setBackground(QColor(200, 255, 200))
+                        item_suma.setForeground(QColor(0, 150, 0))
+                    
+                    self.preview_table.setItem(row, 5, item_suma)
+                    
+                    # Estado
+                    estado = "Local" if cal.get("esLocal", False) else "Bolsa"
+                    item_estado = QTableWidgetItem(estado)
+                    item_estado.setTextAlignment(Qt.AlignCenter)
+                    self.preview_table.setItem(row, 6, item_estado)
+                    
+                    # Válido
+                    valido = "✅ Sí" if suma <= 1.0 else "❌ No"
+                    self.preview_table.setItem(row, 7, QTableWidgetItem(valido))
+                    
+                except Exception as e:
+                    app_logger.error(f"Error al procesar fila {row}: {str(e)}")
+                    # Llenar con valores por defecto para esta fila
+                    for col in range(8):
+                        if self.preview_table.item(row, col) is None:
+                            self.preview_table.setItem(row, col, QTableWidgetItem("N/A"))
+                    continue
+                    
+        except Exception as e:
+            app_logger.error(f"Error al actualizar vista previa: {str(e)}\n{traceback.format_exc()}")
     
     def exportar_csv(self):
         """Exporta datos a CSV con barra de progreso"""
@@ -711,10 +774,10 @@ class GenerarReportesContent(QWidget):
         # Mostrar resultado
         msg = QMessageBox(self)
         
-        if result["success"]:
+        if result.get("success", False):
             msg.setIcon(QMessageBox.Information)
             msg.setWindowTitle("Exportación Exitosa")
-            msg.setText(result["message"])
+            msg.setText(result.get("message", "Exportación completada"))
             
             # Refrescar historial si existe
             if hasattr(self, 'history_table'):
@@ -722,7 +785,7 @@ class GenerarReportesContent(QWidget):
         else:
             msg.setIcon(QMessageBox.Warning)
             msg.setWindowTitle("Error en Exportación")
-            msg.setText(result["message"])
+            msg.setText(result.get("message", "Error desconocido"))
         
         msg.setStyleSheet("""
             QMessageBox {
@@ -767,45 +830,50 @@ class GenerarReportesContent(QWidget):
             self.history_table.setRowCount(len(reportes))
             
             for row, reporte in enumerate(reportes):
-                # Fecha
-                fecha = reporte.get("fechaGeneracion")
-                if fecha:
-                    if hasattr(fecha, 'strftime'):
-                        fecha_str = fecha.strftime("%Y-%m-%d %H:%M")
+                try:
+                    # Fecha
+                    fecha = reporte.get("fechaGeneracion")
+                    if fecha:
+                        if hasattr(fecha, 'strftime'):
+                            fecha_str = fecha.strftime("%Y-%m-%d %H:%M")
+                        else:
+                            fecha_str = str(fecha)
                     else:
-                        fecha_str = str(fecha)
-                else:
-                    fecha_str = "N/A"
-                self.history_table.setItem(row, 0, QTableWidgetItem(fecha_str))
-                
-                # Archivo
-                self.history_table.setItem(row, 1, QTableWidgetItem(reporte.get("nombreArchivo", "")))
-                
-                # Formato
-                formato = reporte.get("formato", "")
-                item_formato = QTableWidgetItem(formato)
-                if formato == "CSV":
-                    item_formato.setForeground(QColor(39, 174, 96))  # Verde
-                else:
-                    item_formato.setForeground(QColor(52, 152, 219))  # Azul
-                self.history_table.setItem(row, 2, item_formato)
-                
-                # Registros
-                registros = str(reporte.get("totalRegistros", 0))
-                item_registros = QTableWidgetItem(registros)
-                item_registros.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                self.history_table.setItem(row, 3, item_registros)
-                
-                # Usuario (solo admin/auditor ve IDs completos)
-                usuario_id = reporte.get("usuarioGeneradorId", "")
-                if self.user_rol in ["administrador", "auditor_tributario"]:
-                    usuario_text = usuario_id[:12] + "..." if len(usuario_id) > 12 else usuario_id
-                else:
-                    usuario_text = "Yo"
-                self.history_table.setItem(row, 4, QTableWidgetItem(usuario_text))
+                        fecha_str = "N/A"
+                    self.history_table.setItem(row, 0, QTableWidgetItem(fecha_str))
+                    
+                    # Archivo
+                    self.history_table.setItem(row, 1, QTableWidgetItem(str(reporte.get("nombreArchivo", ""))))
+                    
+                    # Formato
+                    formato = str(reporte.get("formato", ""))
+                    item_formato = QTableWidgetItem(formato)
+                    if formato == "CSV":
+                        item_formato.setForeground(QColor(39, 174, 96))  # Verde
+                    else:
+                        item_formato.setForeground(QColor(52, 152, 219))  # Azul
+                    self.history_table.setItem(row, 2, item_formato)
+                    
+                    # Registros
+                    registros = str(reporte.get("totalRegistros", 0))
+                    item_registros = QTableWidgetItem(registros)
+                    item_registros.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    self.history_table.setItem(row, 3, item_registros)
+                    
+                    # Usuario (solo admin/auditor ve IDs completos)
+                    usuario_id = str(reporte.get("usuarioGeneradorId", ""))
+                    if self.user_rol in ["administrador", "auditor_tributario"]:
+                        usuario_text = usuario_id[:12] + "..." if len(usuario_id) > 12 else usuario_id
+                    else:
+                        usuario_text = "Yo"
+                    self.history_table.setItem(row, 4, QTableWidgetItem(usuario_text))
+                    
+                except Exception as e:
+                    app_logger.error(f"Error al procesar reporte {row}: {str(e)}")
+                    continue
         
         except Exception as e:
-            app_logger.error(f"Error al cargar historial: {e}")
+            app_logger.error(f"Error al cargar historial: {str(e)}\n{traceback.format_exc()}")
     
     def apply_styles(self):
         """Aplica estilos consistentes con el resto del sistema"""

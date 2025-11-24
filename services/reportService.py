@@ -49,53 +49,64 @@ class ReportService:
             List[Dict]: Lista de calificaciones (máximo MAX_RECORDS)
         """
         try:
-            # Query base optimizada con límite
+            # ✅ CAMBIO: Query simple con UN SOLO where() para evitar necesitar índices compuestos
+            # Filtramos solo por "activo" en Firestore y el resto en memoria
             query = self.datos_ref.where("activo", "==", True).limit(self.MAX_RECORDS)
-            
-            # Aplicar filtros de fecha en Firestore si están disponibles
-            fecha_desde = filtros.get("fecha_desde")
-            fecha_hasta = filtros.get("fecha_hasta")
-            
-            if fecha_desde and fecha_hasta:
-                fecha_desde_str = fecha_desde.strftime("%Y-%m-%d")
-                fecha_hasta_str = fecha_hasta.strftime("%Y-%m-%d")
-                
-                # Aplicar filtros de fecha en Firestore
-                query = query.where("fechaDeclaracion", ">=", fecha_desde_str)
-                query = query.where("fechaDeclaracion", "<=", fecha_hasta_str)
             
             # Ejecutar query
             docs = query.stream()
             
             calificaciones = []
+            
+            # Obtener filtros
+            fecha_desde = filtros.get("fecha_desde")
+            fecha_hasta = filtros.get("fecha_hasta")
+            tipo_impuesto = filtros.get("tipo_impuesto")
+            pais = filtros.get("pais")
+            rut_cliente_filtro = filtros.get("rut_cliente", "")
+            estado_filtro = filtros.get("estado", "ambos")
+            
+            # ✅ CAMBIO: Filtrar TODO en memoria (Python) en vez de en Firestore
             for doc in docs:
                 data = doc.to_dict()
                 data["_id"] = doc.id
                 
-                # Filtros adicionales en memoria
+                # Filtro de fechas
+                if fecha_desde:
+                    fecha_declaracion = data.get("fechaDeclaracion", "")
+                    if fecha_declaracion:
+                        fecha_str = fecha_desde.strftime("%Y-%m-%d")
+                        if fecha_declaracion < fecha_str:
+                            continue
+                
+                if fecha_hasta:
+                    fecha_declaracion = data.get("fechaDeclaracion", "")
+                    if fecha_declaracion:
+                        fecha_str = fecha_hasta.strftime("%Y-%m-%d")
+                        if fecha_declaracion > fecha_str:
+                            continue
                 
                 # Filtro de tipo impuesto
-                if "tipo_impuesto" in filtros and filtros["tipo_impuesto"]:
-                    if data.get("tipoImpuesto", "") != filtros["tipo_impuesto"]:
+                if tipo_impuesto:
+                    if data.get("tipoImpuesto", "") != tipo_impuesto:
                         continue
                 
                 # Filtro de país
-                if "pais" in filtros and filtros["pais"]:
-                    if data.get("pais", "") != filtros["pais"]:
+                if pais:
+                    if data.get("pais", "") != pais:
                         continue
                 
                 # Filtro de RUT cliente
-                if "rut_cliente" in filtros and filtros["rut_cliente"]:
+                if rut_cliente_filtro:
                     cliente_id = data.get("clienteId", "")
                     rut_cliente = self.obtener_rut_cliente(cliente_id)
-                    rut_filtro = filtros["rut_cliente"].strip().upper()
+                    rut_filtro = rut_cliente_filtro.strip().upper()
                     
                     if rut_filtro not in rut_cliente:
                         continue
                 
                 # Filtrar por estado (local/bolsa)
                 es_local = data.get("esLocal", False)
-                estado_filtro = filtros.get("estado", "ambos")
                 
                 if estado_filtro == "local" and not es_local:
                     continue
@@ -202,36 +213,89 @@ class ReportService:
             return pd.DataFrame()
         
         data = []
-        for cal in calificaciones:
-            # Obtener RUT del cliente (usa caché)
-            rut_cliente = self.obtener_rut_cliente(cal.get("clienteId", ""))
-            
-            # Calcular suma factores 8-19
-            factores = cal.get("factores", {})
-            suma_8_19 = sum(factores.get(f"factor_{i}", 0) for i in range(8, 20))
-            
-            # Fila base
-            fila = {
-                "RUT Cliente": rut_cliente,
-                "Fecha Declaración": cal.get("fechaDeclaracion", ""),
-                "Tipo Impuesto": cal.get("tipoImpuesto", ""),
-                "País": cal.get("pais", ""),
-                "Monto Declarado": cal.get("montoDeclarado", 0),
-            }
-            
-            # Agregar factores 1-19
-            for i in range(1, 20):
-                fila[f"Factor {i}"] = factores.get(f"factor_{i}", 0)
-            
-            # Agregar suma y validación
-            fila["Suma Factores 8-19"] = suma_8_19
-            fila["Estado"] = "Local" if cal.get("esLocal", False) else "Bolsa"
-            fila["Válido"] = "Sí" if suma_8_19 <= 1.0 else "No (>1.0)"
-            
-            data.append(fila)
         
-        df = pd.DataFrame(data)
-        return df
+        for idx, cal in enumerate(calificaciones):
+            try:
+                # Obtener RUT del cliente (usa caché)
+                rut_cliente = self.obtener_rut_cliente(cal.get("clienteId", ""))
+                
+                # ✅ CORRECCIÓN: Manejo robusto de factores
+                factores_raw = cal.get("factores", {})
+                factores_dict = {}
+                
+                # Convertir factores a diccionario normalizado
+                if isinstance(factores_raw, dict):
+                    factores_dict = factores_raw
+                elif isinstance(factores_raw, (list, tuple)):
+                    # Convertir lista a diccionario
+                    for i, valor in enumerate(factores_raw, 1):
+                        if i <= 19:
+                            factores_dict[f"factor_{i}"] = valor
+                else:
+                    app_logger.warning(f"Registro {idx}: factores tiene tipo no soportado: {type(factores_raw)}")
+                    factores_dict = {}
+                
+                # Calcular suma factores 8-19
+                suma_8_19 = 0.0
+                try:
+                    suma_8_19 = sum(
+                        float(factores_dict.get(f"factor_{i}", 0)) 
+                        for i in range(8, 20)
+                    )
+                except (ValueError, TypeError) as e:
+                    app_logger.warning(f"Registro {idx}: Error al sumar factores 8-19: {e}")
+                    suma_8_19 = 0.0
+                
+                # Crear fila con valores SIMPLES (no listas, no objetos complejos)
+                fila = {
+                    "RUT Cliente": str(rut_cliente),
+                    "Fecha Declaración": str(cal.get("fechaDeclaracion", "")),
+                    "Tipo Impuesto": str(cal.get("tipoImpuesto", "")),
+                    "País": str(cal.get("pais", "")),
+                    "Monto Declarado": float(cal.get("montoDeclarado", 0)),
+                }
+                
+                # Agregar factores 1-19 individualmente
+                for i in range(1, 20):
+                    try:
+                        valor = factores_dict.get(f"factor_{i}", 0)
+                        # Asegurarse de que sea un número, no una lista
+                        if isinstance(valor, (list, tuple)):
+                            app_logger.warning(f"Registro {idx}: factor_{i} es una lista, usando primer valor")
+                            valor = valor[0] if len(valor) > 0 else 0
+                        fila[f"Factor {i}"] = float(valor)
+                    except (ValueError, TypeError, IndexError) as e:
+                        app_logger.warning(f"Registro {idx}: Error en factor_{i}: {e}")
+                        fila[f"Factor {i}"] = 0.0
+                
+                # Agregar suma y validación
+                fila["Suma Factores 8-19"] = float(suma_8_19)
+                fila["Estado"] = "Local" if cal.get("esLocal", False) else "Bolsa"
+                fila["Válido"] = "Sí" if suma_8_19 <= 1.0 else "No (>1.0)"
+                
+                data.append(fila)
+                
+            except Exception as e:
+                app_logger.error(f"Error al preparar registro {idx}: {str(e)}")
+                import traceback
+                app_logger.error(traceback.format_exc())
+                continue
+        
+        # ✅ VALIDACIÓN: Verificar que data no esté vacío
+        if not data:
+            app_logger.warning("No se pudo preparar ningún registro para el DataFrame")
+            return pd.DataFrame()
+        
+        # Crear DataFrame
+        try:
+            df = pd.DataFrame(data)
+            app_logger.info(f"DataFrame creado exitosamente con {len(df)} filas y {len(df.columns)} columnas")
+            return df
+        except Exception as e:
+            app_logger.error(f"Error al crear DataFrame: {str(e)}")
+            import traceback
+            app_logger.error(traceback.format_exc())
+            return pd.DataFrame()
     
     def exportar_csv(self, file_path: str, calificaciones: List[Dict], 
                     filtros: Dict, usuario_id: str, rol: str,
@@ -555,14 +619,24 @@ class ReportService:
             bool: True si se registró correctamente
         """
         try:
-            # Convertir datetime.date a datetime para Firestore
+            # ✅ CORRECCIÓN: Convertir tipos de datos para Firestore
             filtros_firestore = {}
             for key, value in filtros.items():
                 if isinstance(value, date) and not isinstance(value, datetime):
                     # Convertir date a datetime
                     filtros_firestore[key] = datetime.combine(value, datetime.min.time())
-                else:
+                elif isinstance(value, (list, dict, set, tuple)):
+                    # Convertir tipos complejos a string para evitar error "unhashable type"
+                    filtros_firestore[key] = str(value)
+                elif value is None:
+                    # Firestore acepta None
                     filtros_firestore[key] = value
+                elif isinstance(value, (str, int, float, bool)):
+                    # Tipos básicos soportados por Firestore
+                    filtros_firestore[key] = value
+                else:
+                    # Cualquier otro tipo, convertir a string por seguridad
+                    filtros_firestore[key] = str(value)
             
             # Crear diccionario del reporte
             reporte_data = {
