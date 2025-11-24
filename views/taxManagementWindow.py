@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QDateEdit,
     QComboBox, QFrame, QMessageBox, QAbstractItemView,
     QScrollArea, QDialog, QFormLayout, QLineEdit, QDoubleSpinBox,
-    QGroupBox, QGridLayout, QListWidget, QListWidgetItem
+    QGroupBox, QGridLayout, QListWidget, QListWidgetItem, QInputDialog
 )
 from PyQt5.QtCore import Qt, QDate, pyqtSignal
 from PyQt5.QtGui import QFont, QColor, QCursor
@@ -15,6 +15,7 @@ from PyQt5.QtGui import QFont, QColor, QCursor
 from services.taxService import CalificacionTributariaService
 from services.subsidyService import SubsidioService
 from utils.logger import app_logger
+from config.firebaseConfig import firebase_config
 
 
 class CalificacionFormDialog(QDialog):
@@ -527,6 +528,10 @@ class GestionCalificacionesContent(QWidget):
         self.user_rol = self.user_data.get("rol", "cliente")
         self.service = CalificacionTributariaService()
         self.calificaciones: List[Dict[str, Any]] = []
+        
+        # Cache para RUTs de clientes
+        self.clientes_cache: Dict[str, str] = {}  # {cliente_id: rut}
+        self.db = firebase_config.get_firestore_client()
 
         self.init_ui()
         self.refrescar_tabla()
@@ -632,6 +637,25 @@ class GestionCalificacionesContent(QWidget):
         """)
         toolbar_layout.addWidget(btn_refrescar)
 
+        # Botón "Eliminar Todo" (solo visible para administradores)
+        if self.user_rol == "administrador":
+            btn_eliminar_todo = QPushButton("🗑️ Eliminar Todo")
+            btn_eliminar_todo.setFont(QFont("Arial", 10, QFont.Bold))
+            btn_eliminar_todo.setMinimumHeight(40)
+            btn_eliminar_todo.setCursor(QCursor(Qt.PointingHandCursor))
+            btn_eliminar_todo.clicked.connect(self.eliminar_todas_calificaciones)
+            btn_eliminar_todo.setStyleSheet("""
+                QPushButton {
+                    background-color: #e74c3c;
+                    color: white;
+                    border: none;
+                    border-radius: 5px;
+                    padding: 10px 20px;
+                }
+                QPushButton:hover { background-color: #c0392b; }
+            """)
+            toolbar_layout.addWidget(btn_eliminar_todo)
+
         toolbar_layout.addStretch()
 
         self.label_contador = QLabel("Total: 0 calificaciones")
@@ -717,7 +741,7 @@ class GestionCalificacionesContent(QWidget):
         self.table = QTableWidget()
         self.table.setColumnCount(10)
         self.table.setHorizontalHeaderLabels([
-            "ID", "Cliente", "Fecha", "Tipo", "País",
+            "ID", "Cliente RUT", "Fecha", "Tipo", "País",
             "Monto", "Suma 8-19", "Estado", "Editar", "Eliminar"
         ])
 
@@ -749,23 +773,33 @@ class GestionCalificacionesContent(QWidget):
         self.table.setRowCount(len(calificaciones))
 
         for row, cal in enumerate(calificaciones):
+            # Columna 0: ID (primeros 8 caracteres - codificado)
             item_id = QTableWidgetItem(cal["_id"][:8])
             self.table.setItem(row, 0, item_id)
 
+            # Columna 1: Cliente RUT (NO codificado)
             cliente_id = cal.get("clienteId", "")
-            self.table.setItem(row, 1, QTableWidgetItem(cliente_id))
+            cliente_rut = self._obtener_rut_cliente(cliente_id)
+            item_cliente = QTableWidgetItem(cliente_rut)
+            self.table.setItem(row, 1, item_cliente)
 
+            # Columna 2: Fecha
             fecha_str = cal.get("fechaDeclaracion", "")
             self.table.setItem(row, 2, QTableWidgetItem(fecha_str))
 
+            # Columna 3: Tipo de impuesto
             self.table.setItem(row, 3, QTableWidgetItem(cal.get("tipoImpuesto", "")))
+            
+            # Columna 4: País
             self.table.setItem(row, 4, QTableWidgetItem(cal.get("pais", "")))
 
+            # Columna 5: Monto declarado
             monto = cal.get("montoDeclarado", 0)
             item_monto = QTableWidgetItem(f"${monto:,.2f}")
             item_monto.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.table.setItem(row, 5, item_monto)
 
+            # Columna 6: Suma factores 8-19
             factores = cal.get("factores", {})
             suma = sum(factores.get(f"factor_{i}", 0) for i in range(8, 20))
             item_suma = QTableWidgetItem(f"{suma:.4f}")
@@ -778,6 +812,7 @@ class GestionCalificacionesContent(QWidget):
                 item_suma.setForeground(QColor(0, 150, 0))
             self.table.setItem(row, 6, item_suma)
 
+            # Columna 7: Estado (Local/Bolsa)
             es_local = cal.get("esLocal", False)
             es_admin = self.user_rol == "administrador"
             estado = "Local" if es_local else "Bolsa"
@@ -791,11 +826,13 @@ class GestionCalificacionesContent(QWidget):
                 item_estado.setForeground(QColor(100, 100, 100))
             self.table.setItem(row, 7, item_estado)
 
+            # Columna 8: Botón Editar
             btn_editar = QPushButton("✏️")
             btn_editar.setEnabled(es_admin or es_local)
             btn_editar.clicked.connect(lambda checked, c=cal: self.abrir_formulario_editar(c))
             self.table.setCellWidget(row, 8, btn_editar)
 
+            # Columna 9: Botón Eliminar
             btn_eliminar = QPushButton("🗑️")
             btn_eliminar.setEnabled(es_admin or es_local)
             btn_eliminar.clicked.connect(lambda checked, c=cal: self.eliminar_calificacion(c))
@@ -803,6 +840,60 @@ class GestionCalificacionesContent(QWidget):
 
         self.label_contador.setText(f"Total: {len(calificaciones)} calificaciones")
 
+    def _obtener_rut_cliente(self, cliente_id: str) -> str:
+        """
+        Obtiene el RUT del cliente desde Firestore.
+        Usa caché para evitar consultas repetidas.
+        
+        Args:
+            cliente_id (str): ID del documento del cliente en Firestore
+            
+        Returns:
+            str: RUT del cliente o el cliente_id si no se encuentra
+        """
+        # ✅ NUEVO: Manejar caso donde cliente_id es una lista o None
+        if not cliente_id:
+            return "N/A"
+        
+        # Si cliente_id es una lista, tomar el primer elemento
+        if isinstance(cliente_id, list):
+            if len(cliente_id) > 0:
+                cliente_id = str(cliente_id[0])
+            else:
+                return "N/A"
+        
+        # Convertir a string por si acaso
+        cliente_id = str(cliente_id)
+        
+        # Verificar si ya está en caché
+        if cliente_id in self.clientes_cache:
+            return self.clientes_cache[cliente_id]
+        
+        # Si no está en caché, buscar en Firestore
+        try:
+            cliente_doc = self.db.collection("usuarios").document(cliente_id).get()
+            
+            if cliente_doc.exists:
+                cliente_data = cliente_doc.to_dict()
+                rut = cliente_data.get("rut", cliente_id)
+                
+                # Guardar en caché
+                self.clientes_cache[cliente_id] = rut
+                
+                app_logger.debug(f"RUT obtenido para cliente {cliente_id}: {rut}")
+                return rut
+            else:
+                app_logger.warning(f"Cliente {cliente_id} no encontrado en Firestore")
+                # Guardar en caché para evitar consultas repetidas
+                self.clientes_cache[cliente_id] = cliente_id
+                return cliente_id
+                
+        except Exception as e:
+            app_logger.error(f"Error al obtener RUT del cliente {cliente_id}: {e}")
+            # Guardar en caché para evitar consultas repetidas
+            self.clientes_cache[cliente_id] = cliente_id
+            return cliente_id
+        
     def abrir_formulario_crear(self):
         dialog = CalificacionFormDialog(self, self.user_data, modo="crear")
         if dialog.exec_():
@@ -828,20 +919,53 @@ class GestionCalificacionesContent(QWidget):
             return
 
         if es_admin and not es_local:
-            reply = QMessageBox.warning(
-                self,
-                "⚠️ ADVERTENCIA: Eliminar Dato de Bolsa",
-                "¿Está seguro?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("⚠️ ADVERTENCIA: Eliminar Dato de Bolsa")
+            msg.setText("¿Está seguro de eliminar este dato de la bolsa?")
+            msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            msg.setDefaultButton(QMessageBox.No)
+            msg.setStyleSheet("""
+                QMessageBox {
+                    background-color: white;
+                }
+                QMessageBox QLabel {
+                    color: #2c3e50;
+                    min-width: 300px;
+                }
+                QMessageBox QPushButton {
+                    background-color: #3498db;
+                    color: white;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                    min-width: 80px;
+                }
+            """)
+            reply = msg.exec_()
         else:
-            reply = QMessageBox.question(
-                self,
-                "Confirmar Eliminación",
-                "¿Está seguro de eliminar esta calificación?",
-                QMessageBox.Yes | QMessageBox.No
-            )
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Question)
+            msg.setWindowTitle("Confirmar Eliminación")
+            msg.setText("¿Está seguro de eliminar esta calificación?")
+            msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            msg.setDefaultButton(QMessageBox.No)
+            msg.setStyleSheet("""
+                QMessageBox {
+                    background-color: white;
+                }
+                QMessageBox QLabel {
+                    color: #2c3e50;
+                    min-width: 300px;
+                }
+                QMessageBox QPushButton {
+                    background-color: #3498db;
+                    color: white;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                    min-width: 80px;
+                }
+            """)
+            reply = msg.exec_()
 
         if reply == QMessageBox.Yes:
             result = self.service.eliminar_calificacion(
@@ -854,6 +978,263 @@ class GestionCalificacionesContent(QWidget):
                 QMessageBox.information(self, "Éxito", "Calificación eliminada exitosamente")
             else:
                 QMessageBox.warning(self, "Error", result.get("message", "Error desconocido"))
+
+    def eliminar_todas_calificaciones(self):
+        """
+        Elimina TODAS las calificaciones del sistema.
+        Solo accesible para administradores con doble confirmación.
+        """
+        if self.user_rol != "administrador":
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("Sin permiso")
+            msg.setText("Solo los administradores pueden eliminar todas las calificaciones.")
+            msg.setStyleSheet("""
+                QMessageBox {
+                    background-color: white;
+                }
+                QMessageBox QLabel {
+                    color: #2c3e50;
+                    min-width: 300px;
+                }
+            """)
+            msg.exec_()
+            return
+
+        # Primera confirmación
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle("⚠️ ADVERTENCIA CRÍTICA")
+        msg.setText(
+            "Está a punto de ELIMINAR TODAS las calificaciones tributarias del sistema.\n\n"
+            "Esto incluye:\n"
+            "• Calificaciones de BOLSA (datos oficiales)\n"
+            "• Calificaciones LOCALES (de todos los corredores)\n\n"
+            "Esta acción NO se puede deshacer.\n\n"
+            "¿Desea continuar?"
+        )
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg.setDefaultButton(QMessageBox.No)
+        msg.setStyleSheet("""
+            QMessageBox {
+                background-color: white;
+            }
+            QMessageBox QLabel {
+                color: #2c3e50;
+                min-width: 400px;
+            }
+            QMessageBox QPushButton {
+                background-color: #3498db;
+                color: white;
+                padding: 8px 16px;
+                border-radius: 4px;
+                min-width: 80px;
+            }
+        """)
+        reply = msg.exec_()
+
+        if reply != QMessageBox.Yes:
+            return
+
+        # Segunda confirmación: Diálogo personalizado
+        dialog = QDialog(self)
+        dialog.setWindowTitle("CONFIRMACIÓN FINAL")
+        dialog.setModal(True)
+        dialog.setFixedSize(500, 200)
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: white;
+            }
+            QLabel {
+                color: #2c3e50;
+                font-size: 13px;
+            }
+            QLineEdit {
+                padding: 8px;
+                border: 2px solid #3498db;
+                border-radius: 4px;
+                background-color: white;
+                color: #2c3e50;
+                font-size: 13px;
+            }
+            QPushButton {
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: 600;
+                min-width: 100px;
+            }
+            QPushButton#btn_confirmar {
+                background-color: #e74c3c;
+                color: white;
+                border: none;
+            }
+            QPushButton#btn_confirmar:hover {
+                background-color: #c0392b;
+            }
+            QPushButton#btn_cancelar {
+                background-color: #95a5a6;
+                color: white;
+                border: none;
+            }
+            QPushButton#btn_cancelar:hover {
+                background-color: #7f8c8d;
+            }
+        """)
+        
+        # Layout principal
+        layout = QVBoxLayout()
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Mensaje
+        label = QLabel(
+            "Para confirmar esta acción destructiva,\n"
+            "escriba exactamente:\n\n"
+            "ELIMINAR TODO\n\n"
+            "(distingue mayúsculas y minúsculas)"
+        )
+        label.setAlignment(Qt.AlignCenter)
+        label.setWordWrap(True)
+        layout.addWidget(label)
+        
+        # Input
+        input_text = QLineEdit()
+        input_text.setPlaceholderText("Escriba aquí...")
+        layout.addWidget(input_text)
+        
+        # Botones
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        btn_cancelar = QPushButton("Cancelar")
+        btn_cancelar.setObjectName("btn_cancelar")
+        btn_cancelar.clicked.connect(dialog.reject)
+        button_layout.addWidget(btn_cancelar)
+        
+        btn_confirmar = QPushButton("Confirmar")
+        btn_confirmar.setObjectName("btn_confirmar")
+        btn_confirmar.clicked.connect(dialog.accept)
+        button_layout.addWidget(btn_confirmar)
+        
+        layout.addLayout(button_layout)
+        dialog.setLayout(layout)
+        
+        # Mostrar diálogo
+        result = dialog.exec_()
+        text = input_text.text().strip()
+        
+        if result != QDialog.Accepted or text != "ELIMINAR TODO":
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Information)
+            msg.setWindowTitle("Cancelado")
+            msg.setText("Operación cancelada. No se eliminó nada.")
+            msg.setStyleSheet("""
+                QMessageBox {
+                    background-color: white;
+                }
+                QMessageBox QLabel {
+                    color: #2c3e50;
+                }
+            """)
+            msg.exec_()
+            return
+
+        # Proceder con la eliminación
+        try:
+            app_logger.warning(f"ADMIN {self.user_data.get('_id')} está eliminando TODAS las calificaciones")
+            
+            # ✅ NUEVO: Usar el service en lugar de acceso directo
+            # Primero, obtener todas las calificaciones usando el servicio
+            all_calificaciones = self.service.listar_calificaciones(
+                self.user_data.get("_id"),
+                self.user_rol
+            )
+            
+            app_logger.info(f"Se encontraron {len(all_calificaciones)} calificaciones para eliminar")
+            
+            if len(all_calificaciones) == 0:
+                msg = QMessageBox(self)
+                msg.setIcon(QMessageBox.Information)
+                msg.setWindowTitle("Sin datos")
+                msg.setText("No hay calificaciones para eliminar en el sistema.")
+                msg.setStyleSheet("""
+                    QMessageBox {
+                        background-color: white;
+                    }
+                    QMessageBox QLabel {
+                        color: #2c3e50;
+                    }
+                """)
+                msg.exec_()
+                return
+            
+            deleted_count = 0
+            errors_count = 0
+            
+            # Eliminar una por una usando el servicio
+            for cal in all_calificaciones:
+                try:
+                    result = self.service.eliminar_calificacion(
+                        cal["_id"],
+                        self.user_data.get("_id"),
+                        self.user_rol
+                    )
+                    if result.get("success"):
+                        deleted_count += 1
+                    else:
+                        errors_count += 1
+                        app_logger.error(f"Error al eliminar calificación {cal['_id']}: {result.get('message')}")
+                except Exception as e:
+                    errors_count += 1
+                    app_logger.error(f"Error al eliminar calificación {cal['_id']}: {e}")
+
+            app_logger.warning(
+                f"Eliminación masiva completada. "
+                f"Eliminadas: {deleted_count}, Errores: {errors_count}"
+            )
+
+            # Mostrar resultado
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Information)
+            msg.setWindowTitle("Eliminación Completada")
+            msg.setText(
+                f"✅ Eliminadas: {deleted_count} calificaciones\n"
+                f"❌ Errores: {errors_count}\n\n"
+                f"La tabla se actualizará automáticamente."
+            )
+            msg.setStyleSheet("""
+                QMessageBox {
+                    background-color: white;
+                }
+                QMessageBox QLabel {
+                    color: #2c3e50;
+                    min-width: 300px;
+                }
+            """)
+            msg.exec_()
+
+            # Refrescar tabla
+            self.refrescar_tabla()
+
+        except Exception as e:
+            app_logger.error(f"Error crítico al eliminar todas las calificaciones: {e}")
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Critical)
+            msg.setWindowTitle("Error")
+            msg.setText(
+                f"Ocurrió un error al eliminar las calificaciones:\n\n{str(e)}\n\n"
+                f"Consulte los logs para más detalles."
+            )
+            msg.setStyleSheet("""
+                QMessageBox {
+                    background-color: white;
+                }
+                QMessageBox QLabel {
+                    color: #2c3e50;
+                    min-width: 300px;
+                }
+            """)
+            msg.exec_()
 
     def aplicar_filtros(self):
         filtros: Dict[str, Any] = {}
@@ -881,6 +1262,9 @@ class GestionCalificacionesContent(QWidget):
         self.refrescar_tabla()
 
     def refrescar_tabla(self):
+        """Refresca la tabla y limpia el caché de clientes"""
+        self.clientes_cache.clear()  # Limpiar caché al refrescar
+        
         calificaciones = self.service.listar_calificaciones(
             self.user_data.get("_id"),
             self.user_rol
