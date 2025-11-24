@@ -64,11 +64,12 @@ class MainWindow(QMainWindow):
         self.content_layout.addWidget(self.content_stack)
         
         # Crear páginas
-        self.create_home_page()
-        self.create_carga_masiva_page()
-        self.create_gestionar_calificaciones_page()
-        # Añadimos la página de subsidios para que esté disponible en el stack
-        self.create_gestionar_subsidios_page()
+        self.create_home_page()                      # Index 0
+        self.create_carga_masiva_page()              # Index 1
+        self.create_gestionar_calificaciones_page()  # Index 2
+        self.create_gestionar_subsidios_page()       # Index 3
+        self.create_reportes_page()                  # Index 4 - NUEVO
+        self.create_consultar_page()                 # Index 5 - NUEVO
         
         # Mostrar página de inicio
         self.content_stack.setCurrentIndex(0)
@@ -153,6 +154,29 @@ class MainWindow(QMainWindow):
             from utils.logger import app_logger
             app_logger.error(f"Error creando instancia de SubsidiosWindow: {e}")
 
+    def create_reportes_page(self):
+        """Crea la página de generación de reportes - NUEVO"""
+        try:
+            from views.reportsWindow import GenerarReportesContent
+            
+            reportes_widget = GenerarReportesContent(self.user_data)
+            reportes_widget.back_requested.connect(self.show_home)
+            self.content_stack.addWidget(reportes_widget)
+        except Exception as e:
+            from utils.logger import app_logger
+            app_logger.error(f"Error creando página de reportes: {e}")
+
+    def create_consultar_page(self):
+        try:
+            from views.queryWindow import ConsultarDatosContent
+            
+            consultar_widget = ConsultarDatosContent(self.user_data)
+            consultar_widget.back_requested.connect(self.show_home)
+            self.content_stack.addWidget(consultar_widget)
+        except Exception as e:
+            from utils.logger import app_logger
+            app_logger.error(f"Error creando página de consulta: {e}")
+
     def show_home(self):
         """Muestra la página de inicio"""
         self.content_stack.setCurrentIndex(0)
@@ -195,6 +219,20 @@ class MainWindow(QMainWindow):
             self.content_stack.setCurrentIndex(self.content_stack.count() - 1)
         except Exception:
             self.show_home()
+
+    def show_reportes(self):
+        """Muestra la página de generación de reportes - NUEVO"""
+        if not self.check_connection_before_operation("Generar Reportes"):
+            return
+
+        self.content_stack.setCurrentIndex(4)
+
+    def show_consultar(self):
+        """Muestra la página de consulta de datos - NUEVO"""
+        if not self.check_connection_before_operation("Consultar Datos"):
+            return
+
+        self.content_stack.setCurrentIndex(5)
     
     def add_header(self, layout):
         """Agrega el header con logo y menú de usuario - SIN LÍNEAS"""
@@ -498,7 +536,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(footer)
     
     def on_module_selected(self, module_id: str):
-        """Maneja la selección de un módulo"""
+        """Maneja la selección de un módulo - CORREGIDO"""
         print(f"Módulo seleccionado: {module_id}")
         
         if module_id == "carga_masiva":
@@ -507,8 +545,13 @@ class MainWindow(QMainWindow):
             self.show_gestionar_calificaciones()
         elif module_id == "subsidios":
             self.show_gestionar_subsidios()
+        elif module_id == "reportes":
+            self.show_reportes()  # ← CORREGIDO
+        elif module_id == "consultar":
+            self.show_consultar()  # ← CORREGIDO
         else:
-            # TODO: Implementar otros módulos
+            # Si el módulo no está implementado, volver al home
+            print(f"Módulo '{module_id}' no implementado aún")
             self.show_home()
     
     def open_profile(self):

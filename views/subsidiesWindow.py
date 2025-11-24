@@ -381,3 +381,30 @@ class SubsidiosWindow(QtWidgets.QWidget):
         except Exception as e:
             app_logger.error(f"Error al eliminar todos los subsidios: {e}")
             QtWidgets.QMessageBox.critical(self, "Error", "Ocurrió un error al eliminar todos los subsidios. Consulte logs.")
+
+    def apply_styles(self):
+        """
+        Estilos para la ventana de subsidios (toolbar, botones y tabla).
+        """
+        self.setStyleSheet("""
+            QWidget { background-color: #f5f6fa; color: #2c3e50; }
+            /* Toolbar roles */
+            QPushButton[role="primary"] { background-color: #E94E1B; color: white; border-radius: 6px; padding: 8px 14px; }
+            QPushButton[role="secondary"] { background-color: #3498db; color: white; border-radius: 6px; padding: 8px 12px; }
+            QPushButton[role="success"] { background-color: #16a085; color: white; border-radius: 6px; padding: 8px 12px; }
+            QPushButton[role="danger"] { background-color: #e74c3c; color: white; border-radius: 6px; padding: 8px 12px; }
+            QPushButton[role="muted"] { background-color: #95a5a6; color: white; border-radius: 6px; padding: 6px 10px; }
+
+            /* Table */
+            QTableWidget { background-color: white; border: 1px solid #e6e9ee; }
+            QHeaderView::section { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #E94E1B, stop:1 #ff7a43); color: white; padding: 8px; font-weight: bold; }
+            QTableWidget::item { padding: 6px 8px; }
+
+            /* Inputs and form */
+            QLineEdit { padding: 8px; border: 1px solid #dfe6ee; border-radius: 6px; background: white; }
+            QFrame { background: transparent; }
+
+            /* Small labels */
+            QLabel { color: #2c3e50; }
+            QLabel[role="muted"] { color: #7f8c8d; font-size: 12px; }
+        """)

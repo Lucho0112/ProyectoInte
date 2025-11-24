@@ -13,7 +13,6 @@ from utils.logger import app_logger
 
 class GenerarReportesContent(QWidget):
     """Contenido de generación de reportes"""
-    
     back_requested = pyqtSignal()
     
     def __init__(self, user_data: dict, parent=None):
@@ -40,6 +39,9 @@ class GenerarReportesContent(QWidget):
         # Header
         self.add_header(main_layout)
         
+        # Toolbar
+        self.add_toolbar(main_layout)
+        
         # Filtros
         self.add_filters(main_layout)
         
@@ -60,6 +62,9 @@ class GenerarReportesContent(QWidget):
         widget_layout.setContentsMargins(0, 0, 0, 0)
         widget_layout.addWidget(scroll_area)
         self.setLayout(widget_layout)
+        
+        # Aplicar estilos
+        self.apply_styles()
     
     def add_header(self, layout):
         """Header con botón volver"""
@@ -88,15 +93,45 @@ class GenerarReportesContent(QWidget):
         header_layout.addStretch()
         layout.addLayout(header_layout)
     
+    def add_toolbar(self, layout):
+        """Barra de herramientas"""
+        toolbar_layout = QHBoxLayout()
+        toolbar_layout.setSpacing(10)
+        
+        btn_aplicar = QPushButton("🔍 Aplicar Filtros")
+        btn_aplicar.setFont(QFont("Arial", 10, QFont.Bold))
+        btn_aplicar.setMinimumHeight(40)
+        btn_aplicar.setCursor(QCursor(Qt.PointingHandCursor))
+        btn_aplicar.clicked.connect(self.aplicar_filtros)
+        btn_aplicar.setProperty("role", "primary")
+        toolbar_layout.addWidget(btn_aplicar)
+        
+        btn_limpiar = QPushButton("🗑️ Limpiar Filtros")
+        btn_limpiar.setFont(QFont("Arial", 10))
+        btn_limpiar.setMinimumHeight(40)
+        btn_limpiar.setCursor(QCursor(Qt.PointingHandCursor))
+        btn_limpiar.clicked.connect(self.limpiar_filtros)
+        btn_limpiar.setProperty("role", "muted")
+        toolbar_layout.addWidget(btn_limpiar)
+        
+        toolbar_layout.addStretch()
+        
+        self.label_contador = QLabel("Total: 0 registros")
+        self.label_contador.setFont(QFont("Arial", 11, QFont.Bold))
+        self.label_contador.setStyleSheet("color: #2c3e50;")
+        toolbar_layout.addWidget(self.label_contador)
+        
+        layout.addLayout(toolbar_layout)
+    
     def add_filters(self, layout):
         """Panel de filtros"""
         filter_frame = QFrame()
         filter_frame.setStyleSheet("""
             QFrame {
                 background-color: white;
-                border: 2px solid #dee2e6;
-                border-radius: 10px;
-                padding: 20px;
+                border: 1px solid #e6e9ee;
+                border-radius: 8px;
+                padding: 15px;
             }
         """)
         
@@ -178,46 +213,6 @@ class GenerarReportesContent(QWidget):
         grid_layout.addLayout(col3)
         
         filter_layout.addLayout(grid_layout)
-        
-        # Botones
-        buttons_layout = QHBoxLayout()
-        buttons_layout.addStretch()
-        
-        btn_limpiar = QPushButton("🗑️ Limpiar Filtros")
-        btn_limpiar.setFont(QFont("Arial", 10))
-        btn_limpiar.setMinimumHeight(40)
-        btn_limpiar.setCursor(QCursor(Qt.PointingHandCursor))
-        btn_limpiar.clicked.connect(self.limpiar_filtros)
-        btn_limpiar.setStyleSheet("""
-            QPushButton {
-                background-color: #95a5a6;
-                color: white;
-                border: none;
-                border-radius: 5px;
-                padding: 10px 20px;
-            }
-            QPushButton:hover { background-color: #7f8c8d; }
-        """)
-        buttons_layout.addWidget(btn_limpiar)
-        
-        btn_aplicar = QPushButton("🔍 Aplicar Filtros")
-        btn_aplicar.setFont(QFont("Arial", 10, QFont.Bold))
-        btn_aplicar.setMinimumHeight(40)
-        btn_aplicar.setCursor(QCursor(Qt.PointingHandCursor))
-        btn_aplicar.clicked.connect(self.aplicar_filtros)
-        btn_aplicar.setStyleSheet("""
-            QPushButton {
-                background-color: #E94E1B;
-                color: white;
-                border: none;
-                border-radius: 5px;
-                padding: 10px 20px;
-            }
-            QPushButton:hover { background-color: #d64419; }
-        """)
-        buttons_layout.addWidget(btn_aplicar)
-        
-        filter_layout.addLayout(buttons_layout)
         filter_frame.setLayout(filter_layout)
         layout.addWidget(filter_frame)
     
@@ -227,9 +222,9 @@ class GenerarReportesContent(QWidget):
         preview_frame.setStyleSheet("""
             QFrame {
                 background-color: white;
-                border: 2px solid #dee2e6;
-                border-radius: 10px;
-                padding: 20px;
+                border: 1px solid #e6e9ee;
+                border-radius: 8px;
+                padding: 15px;
             }
         """)
         
@@ -245,12 +240,6 @@ class GenerarReportesContent(QWidget):
         preview_header.addWidget(preview_title)
         
         preview_header.addStretch()
-        
-        self.label_contador = QLabel("Total: 0 registros")
-        self.label_contador.setFont(QFont("Arial", 11, QFont.Bold))
-        self.label_contador.setStyleSheet("color: #E94E1B;")
-        preview_header.addWidget(self.label_contador)
-        
         preview_layout.addLayout(preview_header)
         
         # Tabla
@@ -271,22 +260,6 @@ class GenerarReportesContent(QWidget):
             header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(0, QHeaderView.Stretch)
         
-        self.preview_table.setStyleSheet("""
-            QTableWidget {
-                background-color: white;
-                alternate-background-color: #f8f9fa;
-                border: 1px solid #dee2e6;
-                border-radius: 5px;
-            }
-            QHeaderView::section {
-                background-color: #2c3e50;
-                color: white;
-                padding: 8px;
-                font-weight: bold;
-                border: none;
-            }
-        """)
-        
         self.preview_table.setMaximumHeight(400)
         preview_layout.addWidget(self.preview_table)
         
@@ -298,9 +271,9 @@ class GenerarReportesContent(QWidget):
         export_frame = QFrame()
         export_frame.setStyleSheet("""
             QFrame {
-                background-color: #f8f9fa;
-                border: 2px solid #dee2e6;
-                border-radius: 10px;
+                background-color: white;
+                border: 1px solid #e6e9ee;
+                border-radius: 8px;
                 padding: 20px;
             }
         """)
@@ -337,20 +310,7 @@ class GenerarReportesContent(QWidget):
         self.btn_csv.setCursor(QCursor(Qt.PointingHandCursor))
         self.btn_csv.clicked.connect(self.exportar_csv)
         self.btn_csv.setEnabled(False)
-        self.btn_csv.setStyleSheet("""
-            QPushButton {
-                background-color: #27ae60;
-                color: white;
-                border: none;
-                border-radius: 5px;
-                padding: 10px 20px;
-            }
-            QPushButton:hover:enabled { background-color: #229954; }
-            QPushButton:disabled {
-                background-color: #bdc3c7;
-                color: #7f8c8d;
-            }
-        """)
+        self.btn_csv.setProperty("role", "success")
         export_layout.addWidget(self.btn_csv)
         
         self.btn_excel = QPushButton("📊 Exportar Excel")
@@ -359,20 +319,7 @@ class GenerarReportesContent(QWidget):
         self.btn_excel.setCursor(QCursor(Qt.PointingHandCursor))
         self.btn_excel.clicked.connect(self.exportar_excel)
         self.btn_excel.setEnabled(False)
-        self.btn_excel.setStyleSheet("""
-            QPushButton {
-                background-color: #2980b9;
-                color: white;
-                border: none;
-                border-radius: 5px;
-                padding: 10px 20px;
-            }
-            QPushButton:hover:enabled { background-color: #21618c; }
-            QPushButton:disabled {
-                background-color: #bdc3c7;
-                color: #7f8c8d;
-            }
-        """)
+        self.btn_excel.setProperty("role", "secondary")
         export_layout.addWidget(self.btn_excel)
         
         export_frame.setLayout(export_layout)
@@ -384,9 +331,9 @@ class GenerarReportesContent(QWidget):
         history_frame.setStyleSheet("""
             QFrame {
                 background-color: white;
-                border: 2px solid #dee2e6;
-                border-radius: 10px;
-                padding: 20px;
+                border: 1px solid #e6e9ee;
+                border-radius: 8px;
+                padding: 15px;
             }
         """)
         
@@ -416,16 +363,7 @@ class GenerarReportesContent(QWidget):
         btn_refrescar.setMinimumHeight(35)
         btn_refrescar.setCursor(QCursor(Qt.PointingHandCursor))
         btn_refrescar.clicked.connect(self.cargar_historial)
-        btn_refrescar.setStyleSheet("""
-            QPushButton {
-                background-color: #3498db;
-                color: white;
-                border: none;
-                border-radius: 5px;
-                padding: 8px 16px;
-            }
-            QPushButton:hover { background-color: #2980b9; }
-        """)
+        btn_refrescar.setProperty("role", "secondary")
         history_layout.addWidget(btn_refrescar)
         
         history_frame.setLayout(history_layout)
@@ -648,3 +586,104 @@ class GenerarReportesContent(QWidget):
             else:
                 usuario_text = "Yo"
             self.history_table.setItem(row, 4, QTableWidgetItem(usuario_text))
+    
+    def apply_styles(self):
+        """Aplica estilos consistentes con taxManagementWindow y subsidiesWindow"""
+        self.setStyleSheet("""
+            /* Fondo general */
+            QWidget {
+                background-color: transparent;
+            }
+            
+            /* Frames y GroupBox */
+            QFrame {
+                background-color: #ffffff;
+                border: 1px solid #e6e9ee;
+                border-radius: 8px;
+            }
+            
+            /* Inputs */
+            QLineEdit, QComboBox, QDateEdit, QDoubleSpinBox {
+                padding: 8px 10px;
+                border: 1px solid #d7dfe8;
+                border-radius: 4px;
+                background-color: #ffffff;
+                color: #2c3e50;
+            }
+            
+            /* Botones según rol */
+            QPushButton[role="primary"] {
+                background-color: #E94E1B;
+                color: white;
+                padding: 10px 14px;
+                border-radius: 6px;
+                border: none;
+                font-weight: 600;
+            }
+            QPushButton[role="primary"]:hover {
+                background-color: #d64419;
+            }
+            
+            QPushButton[role="secondary"] {
+                background-color: #3498db;
+                color: white;
+                padding: 10px 14px;
+                border-radius: 6px;
+                border: none;
+            }
+            QPushButton[role="secondary"]:hover {
+                background-color: #2980b9;
+            }
+            
+            QPushButton[role="success"] {
+                background-color: #27ae60;
+                color: white;
+                padding: 10px 14px;
+                border-radius: 6px;
+                border: none;
+            }
+            QPushButton[role="success"]:hover {
+                background-color: #229954;
+            }
+            
+            QPushButton[role="muted"] {
+                background-color: #95a5a6;
+                color: white;
+                padding: 10px 14px;
+                border-radius: 6px;
+                border: none;
+            }
+            QPushButton[role="muted"]:hover {
+                background-color: #7f8c8d;
+            }
+            
+            QPushButton:disabled {
+                background-color: #bdc3c7;
+                color: #7f8c8d;
+            }
+            
+            /* Tablas */
+            QTableWidget {
+                background-color: #ffffff;
+                border: 1px solid #e6e9ee;
+                gridline-color: #f0f2f5;
+            }
+            
+            QHeaderView::section {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                    stop:0 #E94E1B, stop:1 #ff7a43);
+                color: white;
+                padding: 8px;
+                font-weight: bold;
+                border: none;
+            }
+            
+            QTableWidget::item {
+                padding: 6px 8px;
+            }
+            
+            /* Labels */
+            QLabel {
+                color: #2c3e50;
+            }
+        """)
