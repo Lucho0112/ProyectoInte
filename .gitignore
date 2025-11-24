@@ -1,0 +1,77 @@
+# Archivos de configuración sensibles
+.env
+config/serviceAccountKey.json
+*.key
+*.pem
+
+# Logs
+logs/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# PyQt
+*.ui.bak
+*.qrc~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Archivos temporales
+*.tmp
+*.temp
+*.bak
+*.old
+
+# Archivos de sistema
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Archivo de especificación generado por PyInstaller
+main.spec

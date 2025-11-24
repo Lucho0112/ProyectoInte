@@ -1,0 +1,46 @@
+# Framework de Interfaz Gráfica
+# Si falla en Windows sin Visual C++, instalar primero: pip install PyQt5==5.15.10 --only-binary :all:
+PyQt5==5.15.10
+
+# Firebase y Autenticación
+firebase-admin==6.4.0
+pyrebase4==4.8.0
+google-cloud-firestore==2.14.0
+
+# Seguridad y Encriptación
+bcrypt==4.1.2
+cryptography==42.0.0
+python-dotenv==1.0.1
+
+# Manejo de Datos (Compatible Python 3.13)
+numpy==2.1.0
+pandas==2.2.3
+openpyxl==3.1.2
+xlrd==2.0.1
+
+# Validaciones y Utilidades
+python-dateutil==2.8.2
+validators==0.22.0
+
+# Logging y Monitoreo
+loguru==0.7.2
+
+# HTTP Requests (para Firebase)
+# NOTA: pyrebase4 requiere urllib3<2
+requests==2.31.0
+urllib3==1.26.18
+
+# Build dependencies
+setuptools==69.0.3
+wheel==0.42.0
+pyinstaller==6.16.0
+
+# Testing
+pytest==8.0.0
+pytest-qt==4.3.1
+pytest-cov==4.1.0
+
+# Formateo de Código (Desarrollo - Opcional)
+black==24.1.1
+flake8==7.0.0
+autopep8==2.0.4
