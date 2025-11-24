@@ -2,17 +2,43 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QTableWidget, QTableWidgetItem, QHeaderView, QDateEdit,
     QComboBox, QFrame, QMessageBox, QAbstractItemView,
-    QScrollArea, QRadioButton, QButtonGroup, QFileDialog
+    QScrollArea, QRadioButton, QButtonGroup, QFileDialog,
+    QProgressDialog, QLineEdit
 )
-from PyQt5.QtCore import Qt, QDate, pyqtSignal
+from PyQt5.QtCore import Qt, QDate, pyqtSignal, QThread
 from PyQt5.QtGui import QFont, QColor, QCursor
 from datetime import datetime
 from services.reportService import ReportService
 from utils.logger import app_logger
 
 
+class ExportWorker(QThread):
+    """Worker thread para exportación en segundo plano"""
+    progress = pyqtSignal(int)
+    finished = pyqtSignal(dict)
+    
+    def __init__(self, service, method, *args, **kwargs):
+        super().__init__()
+        self.service = service
+        self.method = method
+        self.args = args
+        self.kwargs = kwargs
+    
+    def run(self):
+        """Ejecuta la exportación"""
+        try:
+            result = self.method(*self.args, **self.kwargs, progress_callback=self.emit_progress)
+            self.finished.emit(result)
+        except Exception as e:
+            self.finished.emit({"success": False, "message": str(e)})
+    
+    def emit_progress(self, value):
+        """Emite el progreso"""
+        self.progress.emit(value)
+
+
 class GenerarReportesContent(QWidget):
-    """Contenido de generación de reportes"""
+    """Contenido de generación de reportes tributarios"""
     back_requested = pyqtSignal()
     
     def __init__(self, user_data: dict, parent=None):
@@ -21,6 +47,7 @@ class GenerarReportesContent(QWidget):
         self.user_rol = user_data.get("rol", "cliente")
         self.service = ReportService()
         self.datos_actuales = []
+        self.export_worker = None
         
         self.init_ui()
     
@@ -54,6 +81,9 @@ class GenerarReportesContent(QWidget):
         # Historial (solo admin y auditores)
         if self.user_rol in ["administrador", "auditor_tributario"]:
             self.add_history(main_layout)
+        
+        # Footer
+        self.add_footer(main_layout)
         
         content_widget.setLayout(main_layout)
         scroll_area.setWidget(content_widget)
@@ -188,7 +218,7 @@ class GenerarReportesContent(QWidget):
         
         grid_layout.addLayout(col2)
         
-        # Columna 3: Estado
+        # Columna 3: Estado y RUT
         col3 = QVBoxLayout()
         col3.setSpacing(8)
         
@@ -208,6 +238,13 @@ class GenerarReportesContent(QWidget):
         self.radio_bolsa = QRadioButton("🏛️ Solo Bolsa")
         self.button_group.addButton(self.radio_bolsa)
         col3.addWidget(self.radio_bolsa)
+        
+        # RUT Cliente (opcional)
+        col3.addWidget(QLabel("RUT Cliente (opcional):"))
+        self.input_rut_filtro = QLineEdit()
+        self.input_rut_filtro.setPlaceholderText("Ej: 12345678-9")
+        self.input_rut_filtro.setMinimumHeight(35)
+        col3.addWidget(self.input_rut_filtro)
         
         col3.addStretch()
         grid_layout.addLayout(col3)
@@ -356,6 +393,11 @@ class GenerarReportesContent(QWidget):
         self.history_table.verticalHeader().setVisible(False)
         self.history_table.setMaximumHeight(200)
         
+        header = self.history_table.horizontalHeader()
+        for i in range(5):
+            header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        
         history_layout.addWidget(self.history_table)
         
         # Botón refrescar
@@ -372,37 +414,112 @@ class GenerarReportesContent(QWidget):
         # Cargar historial inicial
         self.cargar_historial()
     
+    def add_footer(self, layout):
+        """Footer informativo"""
+        if self.user_rol == "administrador":
+            footer_text = "💡 Admin: Puedes exportar TODOS los datos del sistema y ver el historial completo"
+        elif self.user_rol == "auditor_tributario":
+            footer_text = "💡 Auditor: Puedes exportar datos de bolsa y tus datos locales, y ver el historial completo"
+        else:
+            footer_text = "💡 Tip: Puedes exportar datos de bolsa y tus propios datos locales"
+        
+        footer = QLabel(footer_text)
+        footer.setFont(QFont("Arial", 9))
+        footer.setStyleSheet("color: #7f8c8d;")
+        layout.addWidget(footer)
+    
     def aplicar_filtros(self):
         """Aplica los filtros y carga datos"""
-        filtros = self.obtener_filtros()
-        
-        # Obtener datos
-        self.datos_actuales = self.service.obtener_datos_filtrados(
-            filtros,
-            self.user_data.get("_id"),
-            self.user_rol
-        )
-        
-        if not self.datos_actuales:
-            QMessageBox.information(
-                self,
-                "Sin resultados",
-                "No se encontraron datos con los filtros aplicados."
+        try:
+            filtros = self.obtener_filtros()
+            
+            # Limpiar caché del servicio
+            self.service.limpiar_cache()
+            
+            # Obtener datos
+            self.datos_actuales = self.service.obtener_datos_filtrados(
+                filtros,
+                self.user_data.get("_id"),
+                self.user_rol
             )
-            self.btn_csv.setEnabled(False)
-            self.btn_excel.setEnabled(False)
-            self.preview_table.setRowCount(0)
-            self.label_contador.setText("Total: 0 registros")
-            return
+            
+            if not self.datos_actuales:
+                msg = QMessageBox(self)
+                msg.setIcon(QMessageBox.Information)
+                msg.setWindowTitle("Sin resultados")
+                msg.setText("No se encontraron datos con los filtros aplicados.")
+                msg.setStyleSheet("""
+                    QMessageBox {
+                        background-color: white;
+                    }
+                    QMessageBox QLabel {
+                        color: #2c3e50;
+                    }
+                """)
+                msg.exec_()
+                
+                self.btn_csv.setEnabled(False)
+                self.btn_excel.setEnabled(False)
+                self.preview_table.setRowCount(0)
+                self.label_contador.setText("Total: 0 registros")
+                return
+            
+            # Advertencia para grandes volúmenes
+            if len(self.datos_actuales) > 5000:
+                msg = QMessageBox(self)
+                msg.setIcon(QMessageBox.Warning)
+                msg.setWindowTitle("Gran volumen de datos")
+                msg.setText(
+                    f"Se encontraron {len(self.datos_actuales)} registros.\n\n"
+                    f"La exportación puede tardar varios minutos.\n\n"
+                    f"¿Desea continuar?"
+                )
+                msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+                msg.setDefaultButton(QMessageBox.No)
+                msg.setStyleSheet("""
+                    QMessageBox {
+                        background-color: white;
+                    }
+                    QMessageBox QLabel {
+                        color: #2c3e50;
+                        min-width: 300px;
+                    }
+                """)
+                
+                if msg.exec_() != QMessageBox.Yes:
+                    return
+            
+            # Actualizar vista previa (primeras 50)
+            preview_data = self.datos_actuales[:self.service.MAX_PREVIEW]
+            self.actualizar_vista_previa(preview_data)
+            
+            # Habilitar exportación
+            self.btn_csv.setEnabled(True)
+            self.btn_excel.setEnabled(True)
+            
+            total = len(self.datos_actuales)
+            if total >= self.service.MAX_RECORDS:
+                self.label_contador.setText(
+                    f"Total: {total} registros (máximo alcanzado)"
+                )
+            else:
+                self.label_contador.setText(f"Total: {total} registros")
         
-        # Actualizar vista previa
-        self.actualizar_vista_previa(self.datos_actuales[:50])
-        
-        # Habilitar exportación
-        self.btn_csv.setEnabled(True)
-        self.btn_excel.setEnabled(True)
-        
-        self.label_contador.setText(f"Total: {len(self.datos_actuales)} registros")
+        except Exception as e:
+            app_logger.error(f"Error al aplicar filtros: {e}")
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Critical)
+            msg.setWindowTitle("Error")
+            msg.setText(f"Error al aplicar filtros:\n\n{str(e)}")
+            msg.setStyleSheet("""
+                QMessageBox {
+                    background-color: white;
+                }
+                QMessageBox QLabel {
+                    color: #2c3e50;
+                }
+            """)
+            msg.exec_()
     
     def obtener_filtros(self) -> dict:
         """Obtiene los filtros actuales"""
@@ -416,6 +533,11 @@ class GenerarReportesContent(QWidget):
         
         if self.combo_pais.currentText() != "Todos":
             filtros["pais"] = self.combo_pais.currentText()
+        
+        # RUT Cliente
+        rut_filtro = self.input_rut_filtro.text().strip()
+        if rut_filtro:
+            filtros["rut_cliente"] = rut_filtro
         
         # Estado
         if self.radio_local.isChecked():
@@ -459,8 +581,10 @@ class GenerarReportesContent(QWidget):
             
             if suma > 1.0:
                 item_suma.setBackground(QColor(255, 200, 200))
+                item_suma.setForeground(QColor(200, 0, 0))
             else:
                 item_suma.setBackground(QColor(200, 255, 200))
+                item_suma.setForeground(QColor(0, 150, 0))
             
             self.preview_table.setItem(row, 5, item_suma)
             
@@ -475,7 +599,7 @@ class GenerarReportesContent(QWidget):
             self.preview_table.setItem(row, 7, QTableWidgetItem(valido))
     
     def exportar_csv(self):
-        """Exporta datos a CSV"""
+        """Exporta datos a CSV con barra de progreso"""
         if not self.datos_actuales:
             return
         
@@ -489,23 +613,44 @@ class GenerarReportesContent(QWidget):
         if not file_path:
             return
         
+        # Crear barra de progreso
+        progress = QProgressDialog(
+            "Generando reporte CSV...",
+            "Cancelar",
+            0, 100, self
+        )
+        progress.setWindowTitle("Exportando")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        
+        # Deshabilitar botones
+        self.btn_csv.setEnabled(False)
+        self.btn_excel.setEnabled(False)
+        
+        # Crear worker
         filtros = self.obtener_filtros()
-        result = self.service.exportar_csv(
+        self.export_worker = ExportWorker(
+            self.service,
+            self.service.exportar_csv,
             file_path,
             self.datos_actuales,
             filtros,
-            self.user_data.get("_id")
+            self.user_data.get("_id"),
+            self.user_rol
         )
         
-        if result["success"]:
-            QMessageBox.information(self, "Éxito", result["message"])
-            if hasattr(self, 'history_table'):
-                self.cargar_historial()
-        else:
-            QMessageBox.warning(self, "Error", result["message"])
+        # Conectar señales
+        self.export_worker.progress.connect(progress.setValue)
+        self.export_worker.finished.connect(
+            lambda result: self.on_export_finished(result, progress, "CSV")
+        )
+        
+        # Iniciar exportación
+        self.export_worker.start()
     
     def exportar_excel(self):
-        """Exporta datos a Excel"""
+        """Exporta datos a Excel con barra de progreso"""
         if not self.datos_actuales:
             return
         
@@ -519,20 +664,76 @@ class GenerarReportesContent(QWidget):
         if not file_path:
             return
         
+        # Crear barra de progreso
+        progress = QProgressDialog(
+            "Generando reporte Excel...",
+            "Cancelar",
+            0, 100, self
+        )
+        progress.setWindowTitle("Exportando")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        
+        # Deshabilitar botones
+        self.btn_csv.setEnabled(False)
+        self.btn_excel.setEnabled(False)
+        
+        # Crear worker
         filtros = self.obtener_filtros()
-        result = self.service.exportar_excel(
+        self.export_worker = ExportWorker(
+            self.service,
+            self.service.exportar_excel,
             file_path,
             self.datos_actuales,
             filtros,
-            self.user_data.get("_id")
+            self.user_data.get("_id"),
+            self.user_rol
         )
         
+        # Conectar señales
+        self.export_worker.progress.connect(progress.setValue)
+        self.export_worker.finished.connect(
+            lambda result: self.on_export_finished(result, progress, "Excel")
+        )
+        
+        # Iniciar exportación
+        self.export_worker.start()
+    
+    def on_export_finished(self, result: dict, progress: QProgressDialog, formato: str):
+        """Maneja el resultado de la exportación"""
+        progress.close()
+        
+        # Rehabilitar botones
+        self.btn_csv.setEnabled(True)
+        self.btn_excel.setEnabled(True)
+        
+        # Mostrar resultado
+        msg = QMessageBox(self)
+        
         if result["success"]:
-            QMessageBox.information(self, "Éxito", result["message"])
+            msg.setIcon(QMessageBox.Information)
+            msg.setWindowTitle("Exportación Exitosa")
+            msg.setText(result["message"])
+            
+            # Refrescar historial si existe
             if hasattr(self, 'history_table'):
                 self.cargar_historial()
         else:
-            QMessageBox.warning(self, "Error", result["message"])
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("Error en Exportación")
+            msg.setText(result["message"])
+        
+        msg.setStyleSheet("""
+            QMessageBox {
+                background-color: white;
+            }
+            QMessageBox QLabel {
+                color: #2c3e50;
+                min-width: 300px;
+            }
+        """)
+        msg.exec_()
     
     def limpiar_filtros(self):
         """Limpia todos los filtros"""
@@ -540,6 +741,7 @@ class GenerarReportesContent(QWidget):
         self.date_hasta.setDate(QDate.currentDate())
         self.combo_tipo.setCurrentIndex(0)
         self.combo_pais.setCurrentIndex(0)
+        self.input_rut_filtro.clear()
         self.radio_ambos.setChecked(True)
         
         self.datos_actuales = []
@@ -547,48 +749,66 @@ class GenerarReportesContent(QWidget):
         self.label_contador.setText("Total: 0 registros")
         self.btn_csv.setEnabled(False)
         self.btn_excel.setEnabled(False)
+        
+        # Limpiar caché
+        self.service.limpiar_cache()
     
     def cargar_historial(self):
         """Carga el historial de reportes"""
         if not hasattr(self, 'history_table'):
             return
         
-        reportes = self.service.obtener_historial_reportes(
-            self.user_data.get("_id"),
-            self.user_rol
-        )
+        try:
+            reportes = self.service.obtener_historial_reportes(
+                self.user_data.get("_id"),
+                self.user_rol
+            )
+            
+            self.history_table.setRowCount(len(reportes))
+            
+            for row, reporte in enumerate(reportes):
+                # Fecha
+                fecha = reporte.get("fechaGeneracion")
+                if fecha:
+                    if hasattr(fecha, 'strftime'):
+                        fecha_str = fecha.strftime("%Y-%m-%d %H:%M")
+                    else:
+                        fecha_str = str(fecha)
+                else:
+                    fecha_str = "N/A"
+                self.history_table.setItem(row, 0, QTableWidgetItem(fecha_str))
+                
+                # Archivo
+                self.history_table.setItem(row, 1, QTableWidgetItem(reporte.get("nombreArchivo", "")))
+                
+                # Formato
+                formato = reporte.get("formato", "")
+                item_formato = QTableWidgetItem(formato)
+                if formato == "CSV":
+                    item_formato.setForeground(QColor(39, 174, 96))  # Verde
+                else:
+                    item_formato.setForeground(QColor(52, 152, 219))  # Azul
+                self.history_table.setItem(row, 2, item_formato)
+                
+                # Registros
+                registros = str(reporte.get("totalRegistros", 0))
+                item_registros = QTableWidgetItem(registros)
+                item_registros.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                self.history_table.setItem(row, 3, item_registros)
+                
+                # Usuario (solo admin/auditor ve IDs completos)
+                usuario_id = reporte.get("usuarioGeneradorId", "")
+                if self.user_rol in ["administrador", "auditor_tributario"]:
+                    usuario_text = usuario_id[:12] + "..." if len(usuario_id) > 12 else usuario_id
+                else:
+                    usuario_text = "Yo"
+                self.history_table.setItem(row, 4, QTableWidgetItem(usuario_text))
         
-        self.history_table.setRowCount(len(reportes))
-        
-        for row, reporte in enumerate(reportes):
-            # Fecha
-            fecha = reporte.get("fechaGeneracion")
-            if fecha:
-                fecha_str = fecha.strftime("%Y-%m-%d %H:%M") if hasattr(fecha, 'strftime') else str(fecha)
-            else:
-                fecha_str = "N/A"
-            self.history_table.setItem(row, 0, QTableWidgetItem(fecha_str))
-            
-            # Archivo
-            self.history_table.setItem(row, 1, QTableWidgetItem(reporte.get("nombreArchivo", "")))
-            
-            # Formato
-            self.history_table.setItem(row, 2, QTableWidgetItem(reporte.get("formato", "")))
-            
-            # Registros
-            registros = str(reporte.get("totalRegistros", 0))
-            self.history_table.setItem(row, 3, QTableWidgetItem(registros))
-            
-            # Usuario (solo admin ve esto)
-            usuario_id = reporte.get("usuarioGeneradorId", "")
-            if self.user_rol == "administrador":
-                usuario_text = usuario_id[:8] + "..."
-            else:
-                usuario_text = "Yo"
-            self.history_table.setItem(row, 4, QTableWidgetItem(usuario_text))
+        except Exception as e:
+            app_logger.error(f"Error al cargar historial: {e}")
     
     def apply_styles(self):
-        """Aplica estilos consistentes con taxManagementWindow y subsidiesWindow"""
+        """Aplica estilos consistentes con el resto del sistema"""
         self.setStyleSheet("""
             /* Fondo general */
             QWidget {
@@ -609,6 +829,10 @@ class GenerarReportesContent(QWidget):
                 border-radius: 4px;
                 background-color: #ffffff;
                 color: #2c3e50;
+            }
+            
+            QLineEdit:focus, QComboBox:focus, QDateEdit:focus {
+                border: 2px solid #3498db;
             }
             
             /* Botones según rol */
@@ -685,5 +909,28 @@ class GenerarReportesContent(QWidget):
             /* Labels */
             QLabel {
                 color: #2c3e50;
+            }
+            
+            /* Radio buttons */
+            QRadioButton {
+                color: #2c3e50;
+                spacing: 8px;
+            }
+            
+            QRadioButton::indicator {
+                width: 18px;
+                height: 18px;
+            }
+            
+            QRadioButton::indicator:unchecked {
+                border: 2px solid #d7dfe8;
+                border-radius: 9px;
+                background-color: white;
+            }
+            
+            QRadioButton::indicator:checked {
+                border: 2px solid #E94E1B;
+                border-radius: 9px;
+                background-color: #E94E1B;
             }
         """)
