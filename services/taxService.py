@@ -10,6 +10,8 @@ from services.subsidyService import SubsidioService
 
 
 class CalificacionTributariaService(FirebaseServiceBase):
+    """Servicio para gestionar calificaciones tributarias (CRUD)"""
+
     def __init__(self):
         self.db = firebase_config.get_firestore_client()
         self.datos_ref = self.db.collection(Settings.COLLECTION_DATOS_TRIBUTARIOS)
@@ -85,12 +87,16 @@ class CalificacionTributariaService(FirebaseServiceBase):
                     }
                 }
 
+            # Normalizar lista de subsidios enviada por la UI (si corresponde)
             subsidios_ids = datos.get("subsidios_aplicados") or []
             if not isinstance(subsidios_ids, list):
                 subsidios_ids = []
             subsidios_ids = [str(x) for x in subsidios_ids if x]
 
-            applied_subsidios, monto_ajustado = self._resolve_and_apply_subsidios(corredor_id, subsidios_ids, datos["monto_declarado"])
+            # Resolver y aplicar solo los subsidios explícitos
+            applied_subsidios, monto_ajustado = self._resolve_and_apply_subsidios(
+                corredor_id, subsidios_ids, datos["monto_declarado"]
+            )
 
             calificacion = {
                 "clienteId": cliente_id,
@@ -110,7 +116,7 @@ class CalificacionTributariaService(FirebaseServiceBase):
             }
 
             try:
-                doc_ref = self.datos_ref.document()  # generar id explícitamente
+                doc_ref = self.datos_ref.document()
                 doc_ref.set(calificacion)
                 calificacion_id = doc_ref.id
             except Exception as e:
@@ -157,7 +163,9 @@ class CalificacionTributariaService(FirebaseServiceBase):
                 subsidios_ids = []
             subsidios_ids = [str(x) for x in subsidios_ids if x]
 
-            applied_subsidios, monto_ajustado = self._resolve_and_apply_subsidios(corredor_id, subsidios_ids, datos["monto_declarado"])
+            applied_subsidios, monto_ajustado = self._resolve_and_apply_subsidios(
+                corredor_id, subsidios_ids, datos["monto_declarado"]
+            )
 
             actualizacion = {
                 "fechaDeclaracion": datos["fecha_declaracion"].strftime("%Y-%m-%d"),
