@@ -68,8 +68,9 @@ class MainWindow(QMainWindow):
         self.create_carga_masiva_page()              # Index 1
         self.create_gestionar_calificaciones_page()  # Index 2
         self.create_gestionar_subsidios_page()       # Index 3
-        self.create_reportes_page()                  # Index 4 - NUEVO
-        self.create_consultar_page()                 # Index 5 - NUEVO
+        self.create_reportes_page()                  # Index 4 
+        self.create_consultar_page()                 # Index 5 
+        self.create_usuarios_page()
         
         # Mostrar página de inicio
         self.content_stack.setCurrentIndex(0)
@@ -167,6 +168,7 @@ class MainWindow(QMainWindow):
             app_logger.error(f"Error creando página de reportes: {e}")
 
     def create_consultar_page(self):
+
         try:
             from views.queryWindow import ConsultarDatosContent
             
@@ -176,6 +178,25 @@ class MainWindow(QMainWindow):
         except Exception as e:
             from utils.logger import app_logger
             app_logger.error(f"Error creando página de consulta: {e}")
+
+    def create_usuarios_page(self):
+
+        try:
+            from views.userManagementWindow import GestionUsuariosContent
+            
+            usuarios_widget = GestionUsuariosContent(self.user_data)
+            usuarios_widget.back_requested.connect(self.show_home)
+            self.content_stack.addWidget(usuarios_widget)
+        except Exception as e:
+            from utils.logger import app_logger
+            app_logger.error(f"Error creando página de usuarios: {e}")
+
+    def show_usuarios(self):
+        """Muestra la página de gestión de usuarios"""
+        if not self.check_connection_before_operation("Gestión de Usuarios"):
+            return
+
+        self.content_stack.setCurrentIndex(6)
 
     def show_home(self):
         """Muestra la página de inicio"""
@@ -546,9 +567,11 @@ class MainWindow(QMainWindow):
         elif module_id == "subsidios":
             self.show_gestionar_subsidios()
         elif module_id == "reportes":
-            self.show_reportes()  # ← CORREGIDO
+            self.show_reportes()
         elif module_id == "consultar":
-            self.show_consultar()  # ← CORREGIDO
+            self.show_consultar()
+        elif module_id == "usuarios":
+            self.show_usuarios()
         else:
             # Si el módulo no está implementado, volver al home
             print(f"Módulo '{module_id}' no implementado aún")
