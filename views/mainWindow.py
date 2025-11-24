@@ -139,20 +139,19 @@ class MainWindow(QMainWindow):
     def create_gestionar_subsidios_page(self):
         """Crea la página de gestión de subsidios y la añade al stack"""
         try:
-            from views.subsidiesWindow import GestionSubsidiosContent
+            from views.subsidiesWindow import SubsidiosWindow
         except Exception as e:
-            # Si la vista no existe o hay un error, registrar y salir silenciosamente (la app sigue funcionando)
             from utils.logger import app_logger
-            app_logger.error(f"No se pudo importar GestionSubsidiosContent: {e}")
+            app_logger.error(f"No se pudo importar SubsidiosWindow: {e}")
             return
 
         try:
-            subsidios_widget = GestionSubsidiosContent(self.user_data)
+            subsidios_widget = SubsidiosWindow(self.user_data)
             subsidios_widget.back_requested.connect(self.show_home)
             self.content_stack.addWidget(subsidios_widget)
         except Exception as e:
             from utils.logger import app_logger
-            app_logger.error(f"Error creando instancia de GestionSubsidiosContent: {e}")
+            app_logger.error(f"Error creando instancia de SubsidiosWindow: {e}")
 
     def show_home(self):
         """Muestra la página de inicio"""

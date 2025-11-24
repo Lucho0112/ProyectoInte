@@ -8,6 +8,7 @@ from utils.validators import validate_factor_sum
 from services.firebaseWrapper import requires_connection, FirebaseServiceBase
 from services.subsidyService import SubsidioService
 
+
 class CalificacionTributariaService(FirebaseServiceBase):
     def __init__(self):
         self.db = firebase_config.get_firestore_client()
@@ -109,11 +110,9 @@ class CalificacionTributariaService(FirebaseServiceBase):
             }
 
             try:
-                doc_ref = self.datos_ref.add(calificacion)
-                if isinstance(doc_ref, (tuple, list)):
-                    calificacion_id = doc_ref[0].id
-                else:
-                    calificacion_id = doc_ref.id
+                doc_ref = self.datos_ref.document()  # generar id explícitamente
+                doc_ref.set(calificacion)
+                calificacion_id = doc_ref.id
             except Exception as e:
                 app_logger.error(f"Error guardando calificación en Firestore: {e}")
                 return {"success": False, "message": "Error al guardar la calificación en la base de datos"}
