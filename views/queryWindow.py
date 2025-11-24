@@ -356,24 +356,28 @@ class ConsultarDatosContent(QWidget):
         header_layout = QHBoxLayout()
         
         back_button = QPushButton("←")
-        back_button.setFont(QFont("Arial", 12))
+        back_button.setFont(QFont("Arial", 16, QFont.Bold))
         back_button.setCursor(QCursor(Qt.PointingHandCursor))
         back_button.clicked.connect(self.back_requested.emit)
+        back_button.setFixedSize(40, 40)
         back_button.setStyleSheet("""
             QPushButton {
                 background-color: transparent;
                 border: none;
                 color: #3498db;
-                padding: 5px;
-                font-size: 18px;
+                padding: 0px;
             }
-            QPushButton:hover { color: #2980b9; }
+            QPushButton:hover { 
+                color: #2980b9;
+                background-color: #ecf0f1;
+                border-radius: 20px;
+            }
         """)
         header_layout.addWidget(back_button)
         
         title = QLabel("🔍 Consultar y Filtrar Datos Tributarios")
         title.setFont(QFont("Arial", 18, QFont.Bold))
-        title.setStyleSheet("color: #2c3e50;")
+        title.setStyleSheet("color: #2c3e50; padding-left: 10px;")
         header_layout.addWidget(title)
         
         header_layout.addStretch()
@@ -553,7 +557,7 @@ class ConsultarDatosContent(QWidget):
         layout.addWidget(filter_frame)
     
     def add_results_table(self, layout):
-        """Tabla de resultados CON BARRA NARANJA"""
+        """Tabla de resultados con header naranja estilo Gestión de Calificaciones"""
         results_frame = QFrame()
         results_frame.setStyleSheet("""
             QFrame {
@@ -567,7 +571,7 @@ class ConsultarDatosContent(QWidget):
         results_layout = QVBoxLayout()
         results_layout.setSpacing(10)
         
-        # Header
+        # Header del panel
         results_header = QHBoxLayout()
         results_title = QLabel("📋 Resultados de la Búsqueda")
         results_title.setFont(QFont("Arial", 13, QFont.Bold))
@@ -582,93 +586,100 @@ class ConsultarDatosContent(QWidget):
         preview_label.setStyleSheet("color: #7f8c8d; padding: 5px 0;")
         results_layout.addWidget(preview_label)
         
-        # ← BARRA NARANJA PERSONALIZADA
-        header_bar = QFrame()
-        header_bar.setFixedHeight(40)
-        header_bar.setStyleSheet("""
-            QFrame {
-                background-color: #E94E1B;
-                border-radius: 5px 5px 0 0;
-            }
-        """)
-        
-        header_layout = QHBoxLayout(header_bar)
-        header_layout.setContentsMargins(5, 0, 5, 0)
-        header_layout.setSpacing(0)
-        
-        # Títulos con anchos proporcionales
-        columnas = [
-            ("RUT Cliente", 140),
-            ("Fecha", 100),
-            ("Tipo", 100),
-            ("País", 100),
-            ("Monto", 130),
-            ("Suma 8-19", 90),
-            ("Estado", 80),
-            ("Válido", 80),
-            ("Ver", 80)
-        ]
-        
-        for titulo, ancho in columnas:
-            lbl = QLabel(titulo)
-            lbl.setFont(QFont("Arial", 10, QFont.Bold))
-            lbl.setStyleSheet("color: white; padding: 10px 5px;")
-            lbl.setAlignment(Qt.AlignCenter)
-            lbl.setFixedWidth(ancho)
-            header_layout.addWidget(lbl)
-        
-        header_layout.addStretch()
-        results_layout.addWidget(header_bar)
-        
-        # Tabla SIN header nativo
         self.results_table = QTableWidget()
         self.results_table.setColumnCount(10)
-        self.results_table.setHorizontalHeaderLabels([
-            "ID", "RUT", "Fecha", "Tipo", "País", "Monto", "Suma", "Estado", "Válido", "Ver"
-        ])
         
-        # OCULTAR header nativo
-        self.results_table.horizontalHeader().setVisible(False)
+        # Configurar headers
+        headers = ["ID", "RUT Cliente", "Fecha", "Tipo", "País", "Monto", "Suma 8-19", "Estado", "Válido", "Ver"]
+        self.results_table.setHorizontalHeaderLabels(headers)
+        
+        # IMPORTANTE: Hacer visible el header
+        header = self.results_table.horizontalHeader()
+        header.setVisible(True)
+        header.setDefaultAlignment(Qt.AlignCenter)
+        header.setMinimumHeight(40)
+        header.setMaximumHeight(40)
+        
         self.results_table.verticalHeader().setVisible(False)
         
+        # Configuración de tabla
         self.results_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.results_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.results_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.results_table.setAlternatingRowColors(True)
         self.results_table.setMinimumHeight(450)
+        self.results_table.setShowGrid(True)
         
         # Ocultar columna ID
         self.results_table.setColumnHidden(0, True)
         
-        # ← ANCHOS EXACTOS para alinear con header naranja
+        header.setSectionResizeMode(QHeaderView.Fixed)
         self.results_table.setColumnWidth(1, 140)  # RUT
         self.results_table.setColumnWidth(2, 100)  # Fecha
-        self.results_table.setColumnWidth(3, 100)  # Tipo
+        self.results_table.setColumnWidth(3, 120)  # Tipo
         self.results_table.setColumnWidth(4, 100)  # País
         self.results_table.setColumnWidth(5, 130)  # Monto
-        self.results_table.setColumnWidth(6, 90)   # Suma
+        self.results_table.setColumnWidth(6, 100)  # Suma
         self.results_table.setColumnWidth(7, 80)   # Estado
         self.results_table.setColumnWidth(8, 80)   # Válido
         self.results_table.setColumnWidth(9, 80)   # Ver
         
-        # Estilo tabla
+        # Estilos de tabla (HEADER NARANJA) - CRÍTICO: No ocultar el header
         self.results_table.setStyleSheet("""
             QTableWidget {
                 background-color: white;
-                border: none;
-                border-top: none;
+                border: 1px solid #dee2e6;
                 gridline-color: #e6e9ee;
+                selection-background-color: #E8F4F8;
+                border-radius: 8px;
             }
+            
+            /* HEADER NARANJA - VISIBLE */
+            QHeaderView::section {
+                background-color: #E94E1B;
+                color: white;
+                padding: 10px 8px;
+                border: none;
+                border-right: 1px solid #d13d0f;
+                font-size: 10pt;
+                font-weight: bold;
+                text-align: center;
+                min-height: 40px;
+                max-height: 40px;
+            }
+            
+            QHeaderView::section:first {
+                border-top-left-radius: 6px;
+            }
+            
+            QHeaderView::section:last {
+                border-top-right-radius: 6px;
+                border-right: none;
+            }
+            
+            QHeaderView::section:hover {
+                background-color: #d13d0f;
+            }
+            
+            /* FILAS */
             QTableWidget::item {
-                padding: 8px 5px;
+                padding: 10px 5px;
                 border-bottom: 1px solid #f0f0f0;
-                font-size: 9pt;
+                font-size: 10pt;
+                color: #2c3e50;
             }
+            
             QTableWidget::item:selected {
                 background-color: #E8F4F8;
                 color: #2c3e50;
             }
+            
             QTableWidget::item:hover {
                 background-color: #f8f9fa;
+            }
+            
+            QTableWidget::item:alternate {
+                background-color: #fafbfc;
             }
         """)
         
@@ -802,57 +813,62 @@ class ConsultarDatosContent(QWidget):
         self.results_table.setRowCount(len(datos))
         
         for row, cal in enumerate(datos):
+            # Altura de fila
+            self.results_table.setRowHeight(row, 45)
+            
             # Col 0: ID (oculto)
             self.results_table.setItem(row, 0, QTableWidgetItem(cal.get("_id", "")))
             
             # Col 1: RUT Cliente
             rut = self.service.obtener_rut_cliente(cal.get("clienteId", ""))
             rut_item = QTableWidgetItem(rut)
-            rut_item.setTextAlignment(Qt.AlignCenter)
-            rut_item.setFont(QFont("Arial", 9))
+            rut_item.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+            rut_item.setFont(QFont("Arial", 10))
             self.results_table.setItem(row, 1, rut_item)
             
             # Col 2: Fecha
             fecha_item = QTableWidgetItem(cal.get("fechaDeclaracion", ""))
-            fecha_item.setTextAlignment(Qt.AlignCenter)
-            fecha_item.setFont(QFont("Arial", 9))
+            fecha_item.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+            fecha_item.setFont(QFont("Arial", 10))
             self.results_table.setItem(row, 2, fecha_item)
             
             # Col 3: Tipo
             tipo_item = QTableWidgetItem(cal.get("tipoImpuesto", ""))
-            tipo_item.setTextAlignment(Qt.AlignCenter)
-            tipo_item.setFont(QFont("Arial", 9))
+            tipo_item.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+            tipo_item.setFont(QFont("Arial", 10))
             self.results_table.setItem(row, 3, tipo_item)
             
             # Col 4: País
             pais_item = QTableWidgetItem(cal.get("pais", ""))
-            pais_item.setTextAlignment(Qt.AlignCenter)
-            pais_item.setFont(QFont("Arial", 9))
+            pais_item.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+            pais_item.setFont(QFont("Arial", 10))
             self.results_table.setItem(row, 4, pais_item)
             
             # Col 5: Monto
             monto = cal.get("montoDeclarado", 0)
             monto_item = QTableWidgetItem(f"${monto:,.2f}")
             monto_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            monto_item.setFont(QFont("Arial", 9))
+            monto_item.setFont(QFont("Arial", 10, QFont.Bold))
+            monto_item.setForeground(QColor("#2c3e50"))
             self.results_table.setItem(row, 5, monto_item)
             
             # Col 6: Suma 8-19
             factores = cal.get("factores", {})
             suma_8_19 = sum(factores.get(f"factor_{i}", 0) for i in range(8, 20))
             suma_item = QTableWidgetItem(f"{suma_8_19:.4f}")
-            suma_item.setTextAlignment(Qt.AlignCenter)
-            suma_item.setFont(QFont("Arial", 9))
+            suma_item.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+            suma_item.setFont(QFont("Arial", 10, QFont.Bold))
             if suma_8_19 > 1.0:
                 suma_item.setForeground(QColor("#e74c3c"))
-                suma_item.setFont(QFont("Arial", 9, QFont.Bold))
+            else:
+                suma_item.setForeground(QColor("#27ae60"))
             self.results_table.setItem(row, 6, suma_item)
             
             # Col 7: Estado
             estado = "Local" if cal.get("esLocal", False) else "Bolsa"
             estado_item = QTableWidgetItem(estado)
-            estado_item.setTextAlignment(Qt.AlignCenter)
-            estado_item.setFont(QFont("Arial", 9))
+            estado_item.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+            estado_item.setFont(QFont("Arial", 10))
             if estado == "Local":
                 estado_item.setForeground(QColor("#3498db"))
             else:
@@ -862,39 +878,43 @@ class ConsultarDatosContent(QWidget):
             # Col 8: Válido
             valido = "✅ Sí" if suma_8_19 <= 1.0 else "❌ No"
             valido_item = QTableWidgetItem(valido)
-            valido_item.setTextAlignment(Qt.AlignCenter)
-            valido_item.setFont(QFont("Arial", 9))
+            valido_item.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+            valido_item.setFont(QFont("Arial", 10))
             if suma_8_19 <= 1.0:
                 valido_item.setForeground(QColor("#27ae60"))
             else:
                 valido_item.setForeground(QColor("#e74c3c"))
             self.results_table.setItem(row, 8, valido_item)
             
-            # Col 9: Botón Ver (CENTRADO)
-            btn_widget = QWidget()
-            btn_layout = QHBoxLayout(btn_widget)
-            btn_layout.setContentsMargins(5, 3, 5, 3)
+            # Col 9: Botón Ver
+            btn_container = QWidget()
+            btn_layout = QHBoxLayout(btn_container)
+            btn_layout.setContentsMargins(5, 5, 5, 5)
             btn_layout.setAlignment(Qt.AlignCenter)
             
-            btn = QPushButton("👁 Ver")
-            btn.setFont(QFont("Arial", 8, QFont.Bold))
-            btn.setFixedSize(60, 24)
-            btn.setCursor(QCursor(Qt.PointingHandCursor))
-            btn.setStyleSheet("""
+            btn_ver = QPushButton("👁 Ver")
+            btn_ver.setFont(QFont("Arial", 9, QFont.Bold))
+            btn_ver.setFixedSize(65, 30)
+            btn_ver.setCursor(QCursor(Qt.PointingHandCursor))
+            btn_ver.setStyleSheet("""
                 QPushButton {
                     background-color: #3498db;
                     color: white;
                     border: none;
-                    border-radius: 3px;
+                    border-radius: 4px;
+                    padding: 5px 10px;
                 }
                 QPushButton:hover {
                     background-color: #2980b9;
                 }
+                QPushButton:pressed {
+                    background-color: #1c6ea4;
+                }
             """)
-            btn.clicked.connect(lambda checked, c=cal: self.ver_detalles(c))
+            btn_ver.clicked.connect(lambda checked, c=cal: self.ver_detalles(c))
             
-            btn_layout.addWidget(btn)
-            self.results_table.setCellWidget(row, 9, btn_widget)
+            btn_layout.addWidget(btn_ver)
+            self.results_table.setCellWidget(row, 9, btn_container)
     
     def ver_detalles(self, calificacion: dict):
         """Muestra diálogo de detalles"""
@@ -996,6 +1016,10 @@ class ConsultarDatosContent(QWidget):
             }
             
             QLabel {
+                color: #2c3e50;
+            }
+            
+            QFrame {
                 color: #2c3e50;
             }
         """)
