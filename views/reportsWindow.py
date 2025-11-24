@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QDateEdit,
     QComboBox, QFrame, QMessageBox, QAbstractItemView,
     QScrollArea, QRadioButton, QButtonGroup, QFileDialog,
-    QProgressDialog, QApplication
+    QProgressDialog, QApplication, QGroupBox
 )
 from PyQt5.QtCore import Qt, QDate, pyqtSignal, QThread
 from PyQt5.QtGui import QFont, QColor, QCursor
@@ -93,6 +93,9 @@ class GenerarReportesContent(QWidget):
         # Header
         self.add_header(main_layout)
         
+        # Toolbar
+        self.add_toolbar(main_layout)
+        
         # Filtros
         self.add_filters(main_layout)
         
@@ -106,6 +109,9 @@ class GenerarReportesContent(QWidget):
         if self.user_rol in ["administrador", "auditor_tributario"]:
             self.add_history(main_layout)
         
+        # Footer
+        self.add_footer(main_layout)
+        
         content_widget.setLayout(main_layout)
         scroll_area.setWidget(content_widget)
         
@@ -113,6 +119,9 @@ class GenerarReportesContent(QWidget):
         widget_layout.setContentsMargins(0, 0, 0, 0)
         widget_layout.addWidget(scroll_area)
         self.setLayout(widget_layout)
+        
+        # Aplicar estilos
+        self.apply_styles()
     
     def add_header(self, layout):
         """Header con botón volver"""
@@ -128,11 +137,9 @@ class GenerarReportesContent(QWidget):
                 border: none;
                 color: #3498db;
                 padding: 5px;
-                font-size: 18px;
             }
             QPushButton:hover { color: #2980b9; }
         """)
-        back_button.setToolTip("Volver al menú principal")
         header_layout.addWidget(back_button)
         
         title = QLabel("📊 Generar Reportes y Exportaciones")
@@ -141,131 +148,18 @@ class GenerarReportesContent(QWidget):
         header_layout.addWidget(title)
         
         header_layout.addStretch()
-        
-        # Agregar contador de reportes generados
-        if self.user_rol in ["administrador", "auditor_tributario"]:
-            try:
-                stats = self.service.obtener_estadisticas_reportes(
-                    self.user_data.get("_id"),
-                    self.user_rol
-                )
-                stats_label = QLabel(f"📈 Total reportes: {stats.get('total_reportes', 0)}")
-                stats_label.setFont(QFont("Arial", 9))
-                stats_label.setStyleSheet("color: #7f8c8d; padding: 5px;")
-                header_layout.addWidget(stats_label)
-            except Exception as e:
-                app_logger.error(f"Error al cargar estadísticas: {str(e)}")
-        
         layout.addLayout(header_layout)
     
-    def add_filters(self, layout):
-        """Panel de filtros"""
-        filter_frame = QFrame()
-        filter_frame.setStyleSheet("""
-            QFrame {
-                background-color: white;
-                border: 2px solid #dee2e6;
-                border-radius: 10px;
-                padding: 20px;
-            }
-        """)
-        
-        filter_layout = QVBoxLayout()
-        filter_layout.setSpacing(15)
-        
-        # Título
-        filter_title = QLabel("🔍 Filtros de Exportación")
-        filter_title.setFont(QFont("Arial", 13, QFont.Bold))
-        filter_title.setStyleSheet("color: #2c3e50;")
-        filter_layout.addWidget(filter_title)
-        
-        # Grid de filtros
-        grid_layout = QHBoxLayout()
-        grid_layout.setSpacing(15)
-        
-        # Columna 1: Fechas
-        col1 = QVBoxLayout()
-        col1.setSpacing(8)
-        
-        col1.addWidget(QLabel("📅 Fecha desde:"))
-        self.date_desde = QDateEdit()
-        self.date_desde.setCalendarPopup(True)
-        self.date_desde.setDate(QDate.currentDate().addMonths(-6))
-        self.date_desde.setDisplayFormat("dd/MM/yyyy")
-        self.date_desde.setMinimumHeight(35)
-        self.date_desde.setToolTip("Seleccione la fecha inicial del rango")
-        col1.addWidget(self.date_desde)
-        
-        col1.addWidget(QLabel("📅 Fecha hasta:"))
-        self.date_hasta = QDateEdit()
-        self.date_hasta.setCalendarPopup(True)
-        self.date_hasta.setDate(QDate.currentDate())
-        self.date_hasta.setDisplayFormat("dd/MM/yyyy")
-        self.date_hasta.setMinimumHeight(35)
-        self.date_hasta.setToolTip("Seleccione la fecha final del rango")
-        col1.addWidget(self.date_hasta)
-        
-        grid_layout.addLayout(col1)
-        
-        # Columna 2: Tipo y País
-        col2 = QVBoxLayout()
-        col2.setSpacing(8)
-        
-        col2.addWidget(QLabel("📋 Tipo de Impuesto:"))
-        self.combo_tipo = QComboBox()
-        self.combo_tipo.addItems(["Todos", "IVA", "Renta", "Importación", "Exportación", "Otro"])
-        self.combo_tipo.setMinimumHeight(35)
-        self.combo_tipo.setToolTip("Filtrar por tipo de impuesto")
-        col2.addWidget(self.combo_tipo)
-        
-        col2.addWidget(QLabel("🌎 País:"))
-        self.combo_pais = QComboBox()
-        self.combo_pais.addItems(["Todos", "Chile", "Perú", "Colombia"])
-        self.combo_pais.setMinimumHeight(35)
-        self.combo_pais.setToolTip("Filtrar por país")
-        col2.addWidget(self.combo_pais)
-        
-        grid_layout.addLayout(col2)
-        
-        # Columna 3: Estado
-        col3 = QVBoxLayout()
-        col3.setSpacing(8)
-        
-        col3.addWidget(QLabel("💾 Estado de datos:"))
-        
-        self.button_group = QButtonGroup()
-        
-        self.radio_ambos = QRadioButton("📊 Ambos (Local + Bolsa)")
-        self.radio_ambos.setChecked(True)
-        self.radio_ambos.setToolTip("Mostrar todos los registros")
-        self.button_group.addButton(self.radio_ambos)
-        col3.addWidget(self.radio_ambos)
-        
-        self.radio_local = QRadioButton("💼 Solo Local")
-        self.radio_local.setToolTip("Solo registros locales")
-        self.button_group.addButton(self.radio_local)
-        col3.addWidget(self.radio_local)
-        
-        self.radio_bolsa = QRadioButton("🏛️ Solo Bolsa")
-        self.radio_bolsa.setToolTip("Solo registros de bolsa")
-        self.button_group.addButton(self.radio_bolsa)
-        col3.addWidget(self.radio_bolsa)
-        
-        col3.addStretch()
-        grid_layout.addLayout(col3)
-        
-        filter_layout.addLayout(grid_layout)
-        
-        # Botones
-        buttons_layout = QHBoxLayout()
-        buttons_layout.addStretch()
+    def add_toolbar(self, layout):
+        """Barra de herramientas"""
+        toolbar_layout = QHBoxLayout()
+        toolbar_layout.setSpacing(10)
         
         btn_limpiar = QPushButton("🗑️ Limpiar Filtros")
         btn_limpiar.setFont(QFont("Arial", 10))
         btn_limpiar.setMinimumHeight(40)
         btn_limpiar.setCursor(QCursor(Qt.PointingHandCursor))
         btn_limpiar.clicked.connect(self.limpiar_filtros)
-        btn_limpiar.setToolTip("Restablecer todos los filtros a valores predeterminados")
         btn_limpiar.setStyleSheet("""
             QPushButton {
                 background-color: #95a5a6;
@@ -276,61 +170,131 @@ class GenerarReportesContent(QWidget):
             }
             QPushButton:hover { background-color: #7f8c8d; }
         """)
-        buttons_layout.addWidget(btn_limpiar)
+        toolbar_layout.addWidget(btn_limpiar)
         
-        btn_aplicar = QPushButton("🔍 Aplicar Filtros")
-        btn_aplicar.setFont(QFont("Arial", 10, QFont.Bold))
-        btn_aplicar.setMinimumHeight(40)
-        btn_aplicar.setCursor(QCursor(Qt.PointingHandCursor))
-        btn_aplicar.clicked.connect(self.aplicar_filtros)
-        btn_aplicar.setToolTip("Buscar datos con los filtros seleccionados")
-        btn_aplicar.setStyleSheet("""
+        toolbar_layout.addStretch()
+        
+        self.label_contador = QLabel("Total: 0 registros")
+        self.label_contador.setFont(QFont("Arial", 10, QFont.Bold))
+        self.label_contador.setStyleSheet("color: #2c3e50;")
+        toolbar_layout.addWidget(self.label_contador)
+        
+        layout.addLayout(toolbar_layout)
+    
+    def add_filters(self, layout):
+        """Panel de filtros"""
+        filter_frame = QFrame()
+        filter_frame.setStyleSheet("""
+            QFrame {
+                background-color: #f8f9fa;
+                border: 1px solid #dee2e6;
+                border-radius: 5px;
+                padding: 10px;
+            }
+        """)
+        
+        filter_layout = QHBoxLayout()
+        filter_layout.setSpacing(15)
+        
+        # Fecha desde
+        filter_layout.addWidget(QLabel("Fecha desde:"))
+        self.date_desde = QDateEdit()
+        self.date_desde.setCalendarPopup(True)
+        self.date_desde.setDate(QDate.currentDate().addMonths(-6))
+        self.date_desde.setDisplayFormat("dd/MM/yyyy")
+        self.date_desde.setMinimumHeight(35)
+        filter_layout.addWidget(self.date_desde)
+        
+        # Fecha hasta
+        filter_layout.addWidget(QLabel("Fecha hasta:"))
+        self.date_hasta = QDateEdit()
+        self.date_hasta.setCalendarPopup(True)
+        self.date_hasta.setDate(QDate.currentDate())
+        self.date_hasta.setDisplayFormat("dd/MM/yyyy")
+        self.date_hasta.setMinimumHeight(35)
+        filter_layout.addWidget(self.date_hasta)
+        
+        # Tipo de impuesto
+        filter_layout.addWidget(QLabel("Tipo:"))
+        self.combo_tipo = QComboBox()
+        self.combo_tipo.addItems(["Todos", "IVA", "Renta", "Importación", "Exportación", "Otro"])
+        self.combo_tipo.setMinimumHeight(35)
+        filter_layout.addWidget(self.combo_tipo)
+        
+        # País
+        filter_layout.addWidget(QLabel("País:"))
+        self.combo_pais = QComboBox()
+        self.combo_pais.addItems(["Todos", "Chile", "Perú", "Colombia"])
+        self.combo_pais.setMinimumHeight(35)
+        filter_layout.addWidget(self.combo_pais)
+        
+        filter_layout.addStretch()
+        
+        # Botón buscar
+        btn_buscar = QPushButton("🔍 Buscar")
+        btn_buscar.setCursor(QCursor(Qt.PointingHandCursor))
+        btn_buscar.clicked.connect(self.aplicar_filtros)
+        btn_buscar.setStyleSheet("""
             QPushButton {
-                background-color: #E94E1B;
+                background-color: #27ae60;
                 color: white;
                 border: none;
-                border-radius: 5px;
-                padding: 10px 20px;
+                border-radius: 4px;
+                padding: 8px 16px;
+                min-height: 35px;
             }
-            QPushButton:hover { background-color: #d64419; }
+            QPushButton:hover { background-color: #229954; }
         """)
-        buttons_layout.addWidget(btn_aplicar)
+        filter_layout.addWidget(btn_buscar)
         
-        filter_layout.addLayout(buttons_layout)
         filter_frame.setLayout(filter_layout)
         layout.addWidget(filter_frame)
+        
+        # Radio buttons para estado (debajo de filtros principales)
+        estado_frame = QFrame()
+        estado_frame.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border: 1px solid #e6e9ee;
+                border-radius: 5px;
+                padding: 10px;
+            }
+        """)
+        
+        estado_layout = QHBoxLayout()
+        estado_layout.addWidget(QLabel("Estado de datos:"))
+        
+        self.button_group = QButtonGroup()
+        
+        self.radio_ambos = QRadioButton("📊 Ambos (Local + Bolsa)")
+        self.radio_ambos.setChecked(True)
+        self.button_group.addButton(self.radio_ambos)
+        estado_layout.addWidget(self.radio_ambos)
+        
+        self.radio_local = QRadioButton("💼 Solo Local")
+        self.button_group.addButton(self.radio_local)
+        estado_layout.addWidget(self.radio_local)
+        
+        self.radio_bolsa = QRadioButton("🏛️ Solo Bolsa")
+        self.button_group.addButton(self.radio_bolsa)
+        estado_layout.addWidget(self.radio_bolsa)
+        
+        estado_layout.addStretch()
+        estado_frame.setLayout(estado_layout)
+        layout.addWidget(estado_frame)
     
     def add_preview(self, layout):
         """Vista previa de datos"""
-        preview_frame = QFrame()
-        preview_frame.setStyleSheet("""
-            QFrame {
-                background-color: white;
-                border: 2px solid #dee2e6;
-                border-radius: 10px;
-                padding: 20px;
-            }
-        """)
-        
-        preview_layout = QVBoxLayout()
-        preview_layout.setSpacing(10)
-        
         # Header de vista previa
         preview_header = QHBoxLayout()
         
-        preview_title = QLabel("👁️ Vista Previa (primeras 50 filas)")
-        preview_title.setFont(QFont("Arial", 13, QFont.Bold))
+        preview_title = QLabel("Vista Previa (primeras 50 filas)")
+        preview_title.setFont(QFont("Arial", 11, QFont.Bold))
         preview_title.setStyleSheet("color: #2c3e50;")
         preview_header.addWidget(preview_title)
         
         preview_header.addStretch()
-        
-        self.label_contador = QLabel("Total: 0 registros")
-        self.label_contador.setFont(QFont("Arial", 11, QFont.Bold))
-        self.label_contador.setStyleSheet("color: #E94E1B;")
-        preview_header.addWidget(self.label_contador)
-        
-        preview_layout.addLayout(preview_header)
+        layout.addLayout(preview_header)
         
         # Tabla
         self.preview_table = QTableWidget()
@@ -349,90 +313,29 @@ class GenerarReportesContent(QWidget):
         for i in range(8):
             header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(0, QHeaderView.Stretch)
+        altura_minima = 35 + (30 * 10) + 10
+        self.preview_table.setMinimumHeight(altura_minima)
+        altura_maxima = 35 + (30 * 15) + 10
+        self.preview_table.setMaximumHeight(altura_maxima)
         
-        self.preview_table.setStyleSheet("""
-            QTableWidget {
-                background-color: white;
-                alternate-background-color: #f8f9fa;
-                border: 1px solid #dee2e6;
-                border-radius: 5px;
-                gridline-color: #dee2e6;
-            }
-            QHeaderView::section {
-                background-color: #2c3e50;
-                color: white;
-                padding: 8px;
-                font-weight: bold;
-                border: none;
-                border-right: 1px solid #34495e;
-            }
-            QTableWidget::item {
-                padding: 5px;
-            }
-            QTableWidget::item:selected {
-                background-color: #3498db;
-                color: white;
-            }
-        """)
-        
-        self.preview_table.setMaximumHeight(400)
-        preview_layout.addWidget(self.preview_table)
-        
-        # Información adicional
-        info_label = QLabel("ℹ️ La vista previa muestra solo las primeras 50 filas. La exportación incluirá todos los registros filtrados.")
-        info_label.setFont(QFont("Arial", 8))
-        info_label.setStyleSheet("color: #7f8c8d; padding: 5px;")
-        info_label.setWordWrap(True)
-        preview_layout.addWidget(info_label)
-        
-        preview_frame.setLayout(preview_layout)
-        layout.addWidget(preview_frame)
+        layout.addWidget(self.preview_table)
     
     def add_export_buttons(self, layout):
         """Botones de exportación"""
-        export_frame = QFrame()
-        export_frame.setStyleSheet("""
-            QFrame {
-                background-color: #f8f9fa;
-                border: 2px solid #dee2e6;
-                border-radius: 10px;
-                padding: 20px;
-            }
-        """)
-        
         export_layout = QHBoxLayout()
         export_layout.setSpacing(15)
         
-        # Icono
-        icon_label = QLabel("📥")
-        icon_label.setFont(QFont("Arial", 36))
-        export_layout.addWidget(icon_label)
+        export_layout.addWidget(QLabel("Exportar datos:"))
         
-        # Texto
-        text_layout = QVBoxLayout()
-        text_layout.setSpacing(5)
-        
-        title_label = QLabel("Exportar Datos")
-        title_label.setFont(QFont("Arial", 13, QFont.Bold))
-        title_label.setStyleSheet("color: #2c3e50;")
-        text_layout.addWidget(title_label)
-        
-        desc_label = QLabel("Selecciona el formato de exportación deseado")
-        desc_label.setFont(QFont("Arial", 9))
-        desc_label.setStyleSheet("color: #7f8c8d;")
-        text_layout.addWidget(desc_label)
-        
-        export_layout.addLayout(text_layout)
         export_layout.addStretch()
         
-        # Botones
+        # Botón CSV
         self.btn_csv = QPushButton("📄 Exportar CSV")
-        self.btn_csv.setFont(QFont("Arial", 11, QFont.Bold))
-        self.btn_csv.setMinimumSize(180, 50)
+        self.btn_csv.setFont(QFont("Arial", 10, QFont.Bold))
+        self.btn_csv.setMinimumSize(150, 45)
         self.btn_csv.setCursor(QCursor(Qt.PointingHandCursor))
         self.btn_csv.clicked.connect(self.exportar_csv)
         self.btn_csv.setEnabled(False)
-        self.btn_csv.setToolTip("Exportar datos a formato CSV (compatible con Excel)")
         self.btn_csv.setStyleSheet("""
             QPushButton {
                 background-color: #27ae60;
@@ -441,8 +344,8 @@ class GenerarReportesContent(QWidget):
                 border-radius: 5px;
                 padding: 10px 20px;
             }
-            QPushButton:hover:enabled { 
-                background-color: #229954; 
+            QPushButton:hover:enabled {
+                background-color: #229954;
             }
             QPushButton:disabled {
                 background-color: #bdc3c7;
@@ -451,23 +354,23 @@ class GenerarReportesContent(QWidget):
         """)
         export_layout.addWidget(self.btn_csv)
         
+        # Botón Excel
         self.btn_excel = QPushButton("📊 Exportar Excel")
-        self.btn_excel.setFont(QFont("Arial", 11, QFont.Bold))
-        self.btn_excel.setMinimumSize(180, 50)
+        self.btn_excel.setFont(QFont("Arial", 10, QFont.Bold))
+        self.btn_excel.setMinimumSize(150, 45)
         self.btn_excel.setCursor(QCursor(Qt.PointingHandCursor))
         self.btn_excel.clicked.connect(self.exportar_excel)
         self.btn_excel.setEnabled(False)
-        self.btn_excel.setToolTip("Exportar datos a formato Excel con formato y resumen")
         self.btn_excel.setStyleSheet("""
             QPushButton {
-                background-color: #2980b9;
+                background-color: #3498db;
                 color: white;
                 border: none;
                 border-radius: 5px;
                 padding: 10px 20px;
             }
-            QPushButton:hover:enabled { 
-                background-color: #21618c;
+            QPushButton:hover:enabled {
+                background-color: #2980b9;
             }
             QPushButton:disabled {
                 background-color: #bdc3c7;
@@ -476,27 +379,37 @@ class GenerarReportesContent(QWidget):
         """)
         export_layout.addWidget(self.btn_excel)
         
-        export_frame.setLayout(export_layout)
-        layout.addWidget(export_frame)
+        layout.addLayout(export_layout)
     
     def add_history(self, layout):
         """Historial de reportes (solo admin/auditor)"""
-        history_frame = QFrame()
-        history_frame.setStyleSheet("""
-            QFrame {
-                background-color: white;
-                border: 2px solid #dee2e6;
-                border-radius: 10px;
-                padding: 20px;
+        # Header del historial
+        history_header = QHBoxLayout()
+        
+        history_title = QLabel("Historial de Reportes Generados")
+        history_title.setFont(QFont("Arial", 11, QFont.Bold))
+        history_title.setStyleSheet("color: #2c3e50;")
+        history_header.addWidget(history_title)
+        
+        history_header.addStretch()
+        
+        btn_refrescar = QPushButton("🔄 Refrescar")
+        btn_refrescar.setMinimumHeight(35)
+        btn_refrescar.setCursor(QCursor(Qt.PointingHandCursor))
+        btn_refrescar.clicked.connect(self.cargar_historial)
+        btn_refrescar.setStyleSheet("""
+            QPushButton {
+                background-color: #3498db;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 8px 16px;
             }
+            QPushButton:hover { background-color: #2980b9; }
         """)
+        history_header.addWidget(btn_refrescar)
         
-        history_layout = QVBoxLayout()
-        
-        title = QLabel("📚 Historial de Reportes Generados")
-        title.setFont(QFont("Arial", 13, QFont.Bold))
-        title.setStyleSheet("color: #2c3e50;")
-        history_layout.addWidget(title)
+        layout.addLayout(history_header)
         
         # Tabla de historial
         self.history_table = QTableWidget()
@@ -508,10 +421,12 @@ class GenerarReportesContent(QWidget):
         self.history_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.history_table.setAlternatingRowColors(True)
         self.history_table.verticalHeader().setVisible(False)
-        self.history_table.setMaximumHeight(200)
         self.history_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        altura_minima = 35 + (30 * 10) + 10
+        self.history_table.setMinimumHeight(altura_minima)
+        altura_maxima = 35 + (30 * 12) + 10
+        self.history_table.setMaximumHeight(altura_maxima)
         
-        # Configurar anchos de columna
         header = self.history_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.Stretch)
@@ -519,47 +434,22 @@ class GenerarReportesContent(QWidget):
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
         
-        self.history_table.setStyleSheet("""
-            QTableWidget {
-                background-color: white;
-                alternate-background-color: #f8f9fa;
-                border: 1px solid #dee2e6;
-                gridline-color: #dee2e6;
-            }
-            QHeaderView::section {
-                background-color: #34495e;
-                color: white;
-                padding: 8px;
-                font-weight: bold;
-                border: none;
-            }
-        """)
-        
-        history_layout.addWidget(self.history_table)
-        
-        # Botón refrescar
-        btn_refrescar = QPushButton("🔄 Refrescar Historial")
-        btn_refrescar.setMinimumHeight(35)
-        btn_refrescar.setCursor(QCursor(Qt.PointingHandCursor))
-        btn_refrescar.clicked.connect(self.cargar_historial)
-        btn_refrescar.setToolTip("Actualizar lista de reportes generados")
-        btn_refrescar.setStyleSheet("""
-            QPushButton {
-                background-color: #3498db;
-                color: white;
-                border: none;
-                border-radius: 5px;
-                padding: 8px 16px;
-            }
-            QPushButton:hover { background-color: #2980b9; }
-        """)
-        history_layout.addWidget(btn_refrescar)
-        
-        history_frame.setLayout(history_layout)
-        layout.addWidget(history_frame)
+        layout.addWidget(self.history_table)
         
         # Cargar historial inicial
         self.cargar_historial()
+    
+    def add_footer(self, layout):
+        """Footer informativo"""
+        if self.user_rol in ["administrador", "auditor_tributario"]:
+            footer_text = "💡 Puede generar reportes de todas las calificaciones del sistema"
+        else:
+            footer_text = "💡 Los reportes incluirán solo los datos a los que tiene acceso según su rol"
+        
+        footer = QLabel(footer_text)
+        footer.setFont(QFont("Arial", 8))
+        footer.setStyleSheet("color: #7f8c8d;")
+        layout.addWidget(footer)
     
     def validar_filtros(self) -> tuple:
         """
@@ -776,7 +666,7 @@ class GenerarReportesContent(QWidget):
                         item_suma.setForeground(QColor(200, 0, 0))
                     else:
                         item_suma.setBackground(QColor(200, 255, 200))
-                        item_suma.setForeground(QColor(0, 128, 0))
+                        item_suma.setForeground(QColor(0, 150, 0))
                     
                     self.preview_table.setItem(row, 5, item_suma)
                     
@@ -797,6 +687,14 @@ class GenerarReportesContent(QWidget):
                     estado = "Local" if es_local else "Bolsa"
                     item_estado = QTableWidgetItem(estado)
                     item_estado.setTextAlignment(Qt.AlignCenter)
+                    
+                    if es_local:
+                        item_estado.setBackground(QColor(200, 230, 255))
+                        item_estado.setForeground(QColor(0, 100, 200))
+                    else:
+                        item_estado.setBackground(QColor(230, 230, 230))
+                        item_estado.setForeground(QColor(100, 100, 100))
+                    
                     self.preview_table.setItem(row, 6, item_estado)
                 except Exception as e:
                     app_logger.error(f"Error en estado fila {row}: {str(e)}")
@@ -950,20 +848,6 @@ class GenerarReportesContent(QWidget):
             except:
                 pass
     
-    def cancelar_exportacion(self):
-        """Cancela la exportación en curso"""
-        if self.export_worker and self.export_worker.isRunning():
-            self.export_worker.terminate()
-            self.export_worker.wait()
-            app_logger.warning("Exportación cancelada por el usuario")
-            if self.progress_dialog:
-                self.progress_dialog.close()
-            QMessageBox.information(
-                self,
-                "ℹ️ Cancelado",
-                "La exportación ha sido cancelada."
-            )
-    
     def exportacion_completada(self, result: dict):
         """Maneja la finalización de la exportación"""
         if self.progress_dialog:
@@ -1071,3 +955,59 @@ class GenerarReportesContent(QWidget):
                 "⚠️ Advertencia",
                 f"Error al cargar el historial de reportes:\n{str(e)}"
             )
+    
+    def apply_styles(self):
+        """Aplica estilos consistentes con las demás gestiones"""
+        self.setStyleSheet("""
+            /* Fondo del contenedor */
+            QWidget {
+                background-color: transparent;
+            }
+            
+            /* Marco de filtros */
+            QFrame {
+                background-color: #ffffff;
+                border: 1px solid #e6e9ee;
+                border-radius: 8px;
+            }
+            
+            /* Inputs */
+            QLineEdit, QComboBox, QDateEdit {
+                padding: 8px 10px;
+                border: 1px solid #d7dfe8;
+                border-radius: 4px;
+                background-color: #ffffff;
+                color: #2c3e50;
+            }
+            
+            /* Tabla */
+            QTableWidget {
+                background-color: #ffffff;
+                border: 1px solid #e6e9ee;
+                gridline-color: #f0f2f5;
+            }
+            
+            QHeaderView::section {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                    stop:0 #E94E1B, stop:1 #ff7a43);
+                color: white;
+                padding: 8px;
+                font-weight: bold;
+                border: none;
+            }
+            
+            QTableWidget::item {
+                padding: 6px 8px;
+            }
+            
+            /* Labels */
+            QLabel {
+                color: #2c3e50;
+            }
+            
+            /* Radio buttons */
+            QRadioButton {
+                color: #2c3e50;
+                spacing: 8px;
+            }
+        """)
